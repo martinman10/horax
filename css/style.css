@@ -228,6 +228,9 @@
             transition: 0.2s; cursor: pointer;
         }
         .pdf-zone.dragover { border-color: var(--primary); background: var(--primary-bg); }
+        .pdf-zone.processing { opacity: 0.6; pointer-events: none; }
+        .pdf-zone.processing i { animation: horax-spin 1s linear infinite; }
+        @keyframes horax-spin { to { transform: rotate(360deg); } }
         .pdf-zone i { font-size: 48px; color: var(--text-light); margin-bottom: 12px; }
         .pdf-zone p { color: var(--text-secondary); font-size: 14px; }
         .pdf-zone input[type="file"] { display: none; }

@@ -258,6 +258,18 @@ const MONTH_MAP = {
     'octubre':9,'noviembre':10,'diciembre':11
 };
 
+// ============================================================
+//  IMPORTAR DESDE FOTO (OCR) — configuración
+//  A diferencia del PDF (que trae la posición exacta de cada
+//  letra), de una foto hay que "leer" el texto con OCR. Estas
+//  constantes calibran esa lectura para que las reglas de columnas/
+//  filas/colores (pensadas para el PDF) también sirvan con fotos
+//  de distinta resolución.
+// ============================================================
+const IMAGE_OCR_LANG = 'spa';
+const IMAGE_MAX_DIMENSION = 2200; // baja fotos gigantes (más rápido, sin perder precisión real)
+const IMAGE_REFERENCE_TEXT_HEIGHT = 8; // alto de letra "de referencia", en la misma escala que usa el PDF
+
 let overtimeData = [];
 let currentMonth = new Date().getMonth();
 let currentYear = new Date().getFullYear();
@@ -913,7 +925,241 @@ async function drawDebugOverlay(page, pageNum, zones, extras) {
 }
 
 // ============================================================
-//  PARSER PRINCIPAL
+//  DETECCIÓN DE CABECERAS DE DÍA ("LUNES 15")
+//  En el PDF, el nombre del día y el número suelen venir ya
+//  pegados en un solo texto ("LUNES 15"). En una foto leída por
+//  OCR casi siempre quedan como dos palabras separadas ("LUNES"
+//  y "15" una al lado de la otra) — por eso se prueban los dos
+//  casos.
+// ============================================================
+function findDayHeaders(words, maxGap) {
+    const DAY_RE = /^(LUNES|MARTES|MI[EÉ]RCOLES|JUEVES|VIERNES|S[ÁA]BADO|DOMINGO)\b/;
+    const headers = [];
+    const sorted = [...words].sort((a, b) => a.y - b.y || a.x - b.x);
+    const usedAsNumber = new Set();
+
+    for (let i = 0; i < sorted.length; i++) {
+        const w = sorted[i];
+        const s = w.str.toUpperCase().trim();
+
+        const together = s.match(new RegExp(DAY_RE.source + '\\s+(\\d{1,2})\\b'));
+        if (together) {
+            const day = parseInt(together[2], 10);
+            if (day >= 1 && day <= 31) headers.push({ day, x: w.x + w.width / 2, y: w.y, text: w.str });
+            continue;
+        }
+
+        if (usedAsNumber.has(i)) continue;
+        const onlyDayName = s.match(new RegExp('^' + DAY_RE.source.slice(1) + '\\.?$'));
+        if (!onlyDayName) continue;
+
+        for (let j = i + 1; j < sorted.length; j++) {
+            if (usedAsNumber.has(j)) continue;
+            const w2 = sorted[j];
+            if (Math.abs(w2.y - w.y) > (w.height || 10) * 1.2) continue;
+            if (w2.x < w.x) continue;
+            if (w2.x - (w.x + w.width) > maxGap) break;
+            const numMatch = w2.str.trim().match(/^(\d{1,2})$/);
+            if (numMatch) {
+                const day = parseInt(numMatch[1], 10);
+                if (day >= 1 && day <= 31) {
+                    headers.push({ day, x: (w.x + w2.x + w2.width) / 2, y: w.y, text: `${w.str} ${w2.str}` });
+                    usedAsNumber.add(j);
+                }
+                break;
+            }
+        }
+    }
+    return headers;
+}
+
+// ============================================================
+//  EXTRACCIÓN COMPARTIDA (PDF y foto usan la misma lógica)
+//  Recibe:
+//   - rawItems: texto detectado (PDF: texto real; foto: palabras del OCR), sin fusionar
+//   - imageData: los píxeles donde muestrear el color de fondo de cada celda
+//   - colorScale: cuánto hay que multiplicar las coordenadas de rawItems para
+//     caer en el mismo espacio de píxeles que imageData
+//   - geomScale: cuánto más "grandes" son las coordenadas de rawItems respecto
+//     a las que se usaron para calibrar los números mágicos de abajo (en el
+//     PDF es 1; en una foto depende de la resolución y el tamaño de letra)
+//   - baseMonth / monthState: para reconocer a qué mes pertenece cada columna
+// ============================================================
+function extractEntriesFromSource(rawItems, imageData, colorScale, geomScale, baseMonth, monthState, fixedTextHeight) {
+    const dbg = { weekGroups: 0, cols: 0, rows: 0, cells: 0, grayCells: 0 };
+    const entries = [];
+    const zones = []; // solo se usa si DEBUG === true, para dibujar el overlay
+
+    const words = mergeTextFragments(rawItems);
+    const dayHeaders = findDayHeaders(words, 25 * geomScale);
+
+    const sortedHeaders = [...dayHeaders].sort((a, b) => a.y - b.y || a.x - b.x);
+    let runningMonth = (monthState.lastGlobalDay > 0) ? monthState.globalMonth : baseMonth;
+    let runningYear = monthState.globalYear;
+    let lastDay = monthState.lastGlobalDay;
+    for (const h of sortedHeaders) {
+        if (lastDay === 0) {
+            if (h.day > 20) {
+                runningMonth = baseMonth - 1;
+                if (runningMonth < 0) { runningMonth = 11; runningYear--; }
+            } else { runningMonth = baseMonth; }
+        } else if (h.day < lastDay - 5) {
+            runningMonth++;
+            if (runningMonth > 11) { runningMonth = 0; runningYear++; }
+        }
+        h.month = runningMonth;
+        h.year = runningYear;
+        lastDay = h.day;
+    }
+    if (sortedHeaders.length > 0) {
+        monthState.lastGlobalDay = lastDay;
+        monthState.globalMonth = runningMonth;
+        monthState.globalYear = runningYear;
+    }
+
+    const weekGroups = clusterByY(dayHeaders, 150 * geomScale);
+    dbg.weekGroups += weekGroups.length;
+
+    for (let wg = 0; wg < weekGroups.length; wg++) {
+        const group = weekGroups[wg];
+        const groupSorted = [...group].sort((a, b) => a.x - b.x);
+        if (groupSorted.length < 5) continue;
+
+        const weekTopY = Math.min(...group.map(h => h.y));
+        const weekBottomY = (wg < weekGroups.length - 1)
+            ? Math.min(...weekGroups[wg + 1].map(h => h.y)) - 30 * geomScale
+            : (imageData.height / colorScale);
+        const weekContentTop = weekTopY + 20 * geomScale;
+        const noteTopY = weekTopY + 30 * geomScale;
+
+        const colRanges = [];
+        for (let i = 0; i < groupSorted.length; i++) {
+            const h = groupSorted[i];
+            let left, right;
+            if (i === 0) {
+                const nextX = groupSorted[i + 1].x;
+                const gap = nextX - h.x;
+                left = h.x - gap * 0.5;
+                right = h.x + gap * 0.5;
+            } else if (i === groupSorted.length - 1) {
+                const prevX = groupSorted[i - 1].x;
+                const gap = h.x - prevX;
+                left = h.x - gap * 0.5;
+                right = h.x + gap * 0.5;
+            } else {
+                const prevX = groupSorted[i - 1].x;
+                const nextX = groupSorted[i + 1].x;
+                left = (prevX + h.x) / 2;
+                right = (h.x + nextX) / 2;
+            }
+            colRanges.push({ day: h.day, month: h.month, year: h.year, headerX: h.x, headerY: h.y, left, right });
+        }
+        dbg.cols += colRanges.length;
+
+        const firstColLeft = colRanges[0].left;
+        const timeWords = words.filter(w => {
+            if (w.x + w.width > firstColLeft - 5 * geomScale) return false;
+            if (w.y < weekContentTop || w.y > weekBottomY) return false;
+            return /^\d{1,2}:\d{2}/.test(w.str);
+        });
+
+        const timeRows = [];
+        for (const tw of timeWords) {
+            const m = tw.str.match(/^(\d{1,2}):(\d{2})\s*[-–—]\s*(\d{1,2}):(\d{2})/);
+            if (!m) continue;
+            timeRows.push({
+                start: `${m[1].padStart(2, '0')}:${m[2]}`,
+                end: `${m[3].padStart(2, '0')}:${m[4]}`,
+                y: tw.y
+            });
+        }
+        timeRows.sort((a, b) => a.y - b.y);
+
+        const uniqueRows = [];
+        for (const tr of timeRows) {
+            if (uniqueRows.length === 0 || uniqueRows[uniqueRows.length - 1].start !== tr.start) {
+                uniqueRows.push(tr);
+            }
+        }
+        dbg.rows += uniqueRows.length;
+
+        const rowRanges = [];
+        for (let i = 0; i < uniqueRows.length; i++) {
+            const r = uniqueRows[i];
+            let top, bottom;
+            if (i === 0) {
+                const nextY = uniqueRows[i + 1]?.y ?? r.y + 20 * geomScale;
+                const gap = nextY - r.y;
+                top = r.y - gap * 0.5;
+                bottom = r.y + gap * 0.5;
+            } else if (i === uniqueRows.length - 1) {
+                const prevY = uniqueRows[i - 1].y;
+                const gap = r.y - prevY;
+                top = r.y - gap * 0.5;
+                bottom = r.y + gap * 0.5;
+            } else {
+                const prevY = uniqueRows[i - 1].y;
+                const nextY = uniqueRows[i + 1].y;
+                top = (prevY + r.y) / 2;
+                bottom = (r.y + nextY) / 2;
+            }
+            rowRanges.push({ start: r.start, end: r.end, labelY: r.y, top, bottom });
+        }
+
+        for (const w of words) {
+            if (isHeaderOrLabel(w.str)) continue;
+            if (w.y < noteTopY || w.y > weekBottomY) continue;
+
+            const wx = w.x + w.width / 2;
+            let col = null;
+            for (const c of colRanges) {
+                if (wx >= c.left && wx < c.right) { col = c; break; }
+            }
+            if (!col) continue;
+
+            const rowY = w.y + 2.85 * geomScale;
+            let row = null;
+            for (const r of rowRanges) {
+                if (rowY >= r.top && rowY < r.bottom) { row = r; break; }
+            }
+            if (!row) continue;
+
+            const name = extractPersonName(w.str);
+            if (!name) continue;
+
+            const textW = w.width || 30 * geomScale;
+            // PDF: alto fijo (no depende de la versión de PDF.js, ver nota histórica más abajo).
+            // Foto: se usa el alto real que midió el OCR para esa palabra, que es confiable.
+            const textH = (fixedTextHeight != null) ? fixedTextHeight : (w.height || 4 * geomScale);
+            const bboxX = w.x * colorScale;
+            const bboxY = (w.y - textH) * colorScale;
+            const bboxW = textW * colorScale;
+            const bboxH = textH * colorScale;
+
+            const colorInfo = sampleTextBackground(imageData, bboxX, bboxY, bboxW, bboxH);
+            dbg.cells++;
+
+            if (DEBUG && colorInfo) {
+                zones.push({
+                    left: col.left, right: col.right, top: row.top, bottom: row.bottom,
+                    isGray: colorInfo.isGray, r: colorInfo.r, g: colorInfo.g, b: colorInfo.b,
+                    name, day: col.day, hour: row.start
+                });
+            }
+
+            if (!colorInfo || !colorInfo.isGray) continue;
+            dbg.grayCells++;
+
+            const dateStr = formatDate(new Date(col.year, col.month, col.day));
+            entries.push({ date: dateStr, start: row.start, end: row.end, person: name, done: false });
+        }
+    }
+
+    return { entries, dbg, zones };
+}
+
+// ============================================================
+//  PARSER PRINCIPAL (PDF)
 // ============================================================
 async function parsePdfFile(file) {
     if (!initPdfJs()) return;
@@ -924,7 +1170,6 @@ async function parsePdfFile(file) {
         try {
             const pdf = await pdfjsLib.getDocument({ data: e.target.result }).promise;
             const allEntries = [];
-            const seen = new Set();
             let lastGlobalDay = 0;
             let globalMonth = 8;
             // el año sale del nombre del archivo (ej. HORARIOS_2026_-_SEPTIEMBRE...); si no lo trae, el año actual
@@ -951,225 +1196,29 @@ async function parsePdfFile(file) {
                 }
                 if (items.length === 0) continue;
 
-                const words = mergeTextFragments(items);
                 const SCALE = 2;
                 const rendered = await renderPageToImageData(page, SCALE);
 
                 const detectedMonthName = detectMonthFromTexts(items);
                 const baseMonth = MONTH_MAP[detectedMonthName] ?? 8;
 
-                const dayHeaders = [];
-                for (const w of words) {
-                    const s = w.str.toUpperCase();
-                    const m = s.match(/^(LUNES|MARTES|MI[EÉ]RCOLES|JUEVES|VIERNES|S[ÁA]BADO|DOMINGO)\s+(\d{1,2})\b/);
-                    if (m) {
-                        const day = parseInt(m[2], 10);
-                        if (day >= 1 && day <= 31) {
-                            dayHeaders.push({
-                                day,
-                                x: w.x + w.width / 2,
-                                y: w.y,
-                                text: w.str
-                            });
-                        }
-                    }
-                }
+                const monthState = { lastGlobalDay, globalMonth, globalYear };
+                const result = extractEntriesFromSource(
+                    items, rendered.imageData, SCALE, /* geomScale */ 1, baseMonth, monthState, /* fixedTextHeight */ 4
+                );
+                lastGlobalDay = monthState.lastGlobalDay;
+                globalMonth = monthState.globalMonth;
+                globalYear = monthState.globalYear;
 
-                const sortedHeaders = [...dayHeaders].sort((a, b) => a.y - b.y || a.x - b.x);
-                let runningMonth = (lastGlobalDay > 0) ? globalMonth : baseMonth;
-                let runningYear = globalYear;
-                let lastDay = lastGlobalDay;
-                for (const h of sortedHeaders) {
-                    if (lastDay === 0) {
-                        if (h.day > 20) {
-                            runningMonth = baseMonth - 1;
-                            if (runningMonth < 0) { runningMonth = 11; runningYear--; }
-                        } else { runningMonth = baseMonth; }
-                    } else if (h.day < lastDay - 5) {
-                        runningMonth++;
-                        if (runningMonth > 11) { runningMonth = 0; runningYear++; }
-                    }
-                    h.month = runningMonth;
-                    h.year = runningYear;
-                    lastDay = h.day;
-                }
-                if (sortedHeaders.length > 0) {
-                    lastGlobalDay = lastDay;
-                    globalMonth = runningMonth;
-                    globalYear = runningYear;
-                }
+                allEntries.push(...result.entries);
+                dbg.weekGroups += result.dbg.weekGroups;
+                dbg.cols += result.dbg.cols;
+                dbg.rows += result.dbg.rows;
+                dbg.cells += result.dbg.cells;
+                dbg.grayCells += result.dbg.grayCells;
 
-                const weekGroups = clusterByY(dayHeaders, 150);
-                dbg.weekGroups += weekGroups.length;
-
-                const allZonesForPage = [];
-
-                for (let wg = 0; wg < weekGroups.length; wg++) {
-                    const group = weekGroups[wg];
-                    const groupSorted = [...group].sort((a, b) => a.x - b.x);
-                    if (groupSorted.length < 5) continue;
-
-                    const weekTopY = Math.min(...group.map(h => h.y));
-                    const weekBottomY = (wg < weekGroups.length - 1)
-                        ? Math.min(...weekGroups[wg + 1].map(h => h.y)) - 30
-                        : viewport.height;
-                    const weekContentTop = weekTopY + 20;
-                    const noteTopY = weekTopY + 30;
-
-                    const colRanges = [];
-                    for (let i = 0; i < groupSorted.length; i++) {
-                        const h = groupSorted[i];
-                        let left, right;
-                        if (i === 0) {
-                            const nextX = groupSorted[i + 1].x;
-                            const gap = nextX - h.x;
-                            left = h.x - gap * 0.5;
-                            right = h.x + gap * 0.5;
-                        } else if (i === groupSorted.length - 1) {
-                            const prevX = groupSorted[i - 1].x;
-                            const gap = h.x - prevX;
-                            left = h.x - gap * 0.5;
-                            right = h.x + gap * 0.5;
-                        } else {
-                            const prevX = groupSorted[i - 1].x;
-                            const nextX = groupSorted[i + 1].x;
-                            left = (prevX + h.x) / 2;
-                            right = (h.x + nextX) / 2;
-                        }
-                        colRanges.push({
-                            day: h.day, month: h.month, year: h.year,
-                            headerX: h.x, headerY: h.y,
-                            left, right
-                        });
-                    }
-                    dbg.cols += colRanges.length;
-
-                    const firstColLeft = colRanges[0].left;
-                    const timeWords = words.filter(w => {
-                        if (w.x + w.width > firstColLeft - 5) return false;
-                        if (w.y < weekContentTop || w.y > weekBottomY) return false;
-                        return /^\d{1,2}:\d{2}/.test(w.str);
-                    });
-
-                    const timeRows = [];
-                    for (const tw of timeWords) {
-                        const m = tw.str.match(/^(\d{1,2}):(\d{2})\s*[-–—]\s*(\d{1,2}):(\d{2})/);
-                        if (!m) continue;
-                        timeRows.push({
-                            start: `${m[1].padStart(2, '0')}:${m[2]}`,
-                            end: `${m[3].padStart(2, '0')}:${m[4]}`,
-                            y: tw.y
-                        });
-                    }
-                    timeRows.sort((a, b) => a.y - b.y);
-
-                    const uniqueRows = [];
-                    for (const tr of timeRows) {
-                        if (uniqueRows.length === 0 || uniqueRows[uniqueRows.length - 1].start !== tr.start) {
-                            uniqueRows.push(tr);
-                        }
-                    }
-                    dbg.rows += uniqueRows.length;
-
-                    const rowRanges = [];
-                    for (let i = 0; i < uniqueRows.length; i++) {
-                        const r = uniqueRows[i];
-                        let top, bottom;
-                        if (i === 0) {
-                            const nextY = uniqueRows[i + 1]?.y ?? r.y + 20;
-                            const gap = nextY - r.y;
-                            top = r.y - gap * 0.5;
-                            bottom = r.y + gap * 0.5;
-                        } else if (i === uniqueRows.length - 1) {
-                            const prevY = uniqueRows[i - 1].y;
-                            const gap = r.y - prevY;
-                            top = r.y - gap * 0.5;
-                            bottom = r.y + gap * 0.5;
-                        } else {
-                            const prevY = uniqueRows[i - 1].y;
-                            const nextY = uniqueRows[i + 1].y;
-                            top = (prevY + r.y) / 2;
-                            bottom = (r.y + nextY) / 2;
-                        }
-                        rowRanges.push({
-                            start: r.start, end: r.end,
-                            labelY: r.y, top, bottom
-                        });
-                    }
-
-                    for (const w of words) {
-                        if (isHeaderOrLabel(w.str)) continue;
-                        if (w.y < noteTopY || w.y > weekBottomY) continue;
-
-                        const wx = w.x + w.width / 2;
-                        let col = null;
-                        for (const c of colRanges) {
-                            if (wx >= c.left && wx < c.right) { col = c; break; }
-                        }
-                        if (!col) continue;
-
-                        // el texto del nombre queda ~3pt por encima de la línea base de la etiqueta de hora
-                        const rowY = w.y + 2.85;
-                        let row = null;
-                        for (const r of rowRanges) {
-                            if (rowY >= r.top && rowY < r.bottom) { row = r; break; }
-                        }
-                        if (!row) continue;
-
-                        const name = extractPersonName(w.str);
-                        if (!name) continue;
-
-                        const textW = w.width || 30;
-                        const textH = 4; // alto fijo: no depende de la versión de PDF.js
-                        const bboxX = w.x * SCALE;
-                        const bboxY = (w.y - textH) * SCALE;
-                        const bboxW = textW * SCALE;
-                        const bboxH = textH * SCALE;
-
-                        const colorInfo = sampleTextBackground(
-                            rendered.imageData,
-                            bboxX, bboxY, bboxW, bboxH
-                        );
-                        dbg.cells++;
-
-                        if (DEBUG && colorInfo) {
-                            allZonesForPage.push({
-                                left: col.left, right: col.right,
-                                top: row.top, bottom: row.bottom,
-                                isGray: colorInfo.isGray,
-                                r: colorInfo.r, g: colorInfo.g, b: colorInfo.b,
-                                name: name,
-                                day: col.day, hour: row.start
-                            });
-                        }
-
-                        if (DEBUG && colorInfo) {
-                            const tag = colorInfo.isGray ? '🔴GRAY' : colorInfo.isColor ? '🟢COLOR' : '⚪WHITE';
-                            console.log(`  "${name}" ${col.day}/${col.month+1} ${row.start}-${row.end} → ${tag} rgb(${colorInfo.r|0},${colorInfo.g|0},${colorInfo.b|0}) sat=${colorInfo.sat|0} lum=${colorInfo.lum|0} n=${colorInfo.totalSamples}`);
-                        } else if (DEBUG) {
-                            console.log(`  "${name}" ${col.day}/${col.month+1} ${row.start}-${row.end} → sin color (null)`);
-                        }
-
-                        if (!colorInfo || !colorInfo.isGray) continue;
-                        dbg.grayCells++;
-
-                        const dateStr = formatDate(new Date(col.year, col.month, col.day));
-                        const key = `${dateStr}|${row.start}|${row.end}|${name}`;
-                        if (seen.has(key)) continue;
-                        seen.add(key);
-
-                        allEntries.push({
-                            date: dateStr,
-                            start: row.start,
-                            end: row.end,
-                            person: name,
-                            done: false
-                        });
-                    }
-                }
-
-                if (DEBUG && allZonesForPage.length > 0) {
-                    drawDebugOverlay(page, p, allZonesForPage, allEntries).catch(err =>
+                if (DEBUG && result.zones.length > 0) {
+                    drawDebugOverlay(page, p, result.zones, allEntries).catch(err =>
                         console.warn('Overlay error:', err)
                     );
                 }
@@ -1181,16 +1230,16 @@ async function parsePdfFile(file) {
 
             pdfParsedData = merged;
             showPdfPreview(merged);
-            console.log('[XTRASPILAR] Debug:', dbg, '→', merged.length, 'extras');
+            console.log('[HORAX] Debug PDF:', dbg, '→', merged.length, 'extras');
 
             if (merged.length === 0) {
                 const box = document.getElementById('pdfError');
                 box.style.display = 'block';
-                box.textContent = `No se detectaron extras. Debug: ${dbg.headers||0} cabeceras, ${dbg.weekGroups} semanas, ${dbg.cols} columnas, ${dbg.rows} filas, ${dbg.cells} celdas, ${dbg.grayCells} grises.`;
+                box.textContent = `No se detectaron extras. Debug: ${dbg.weekGroups} semanas, ${dbg.cols} columnas, ${dbg.rows} filas, ${dbg.cells} celdas, ${dbg.grayCells} grises.`;
                 showToast('No se detectaron extras');
             }
         } catch (err) {
-            console.error('[XTRASPILAR] Error:', err);
+            console.error('[HORAX] Error:', err);
             const box = document.getElementById('pdfError');
             box.style.display = 'block';
             box.textContent = 'Error al procesar el PDF: ' + err.message;
@@ -1198,6 +1247,161 @@ async function parsePdfFile(file) {
         }
     };
     reader.readAsArrayBuffer(file);
+}
+
+// ============================================================
+//  PARSER PRINCIPAL (FOTO / IMAGEN) — usa OCR (Tesseract.js) para
+//  "leer" el texto y después reutiliza exactamente la misma lógica
+//  de columnas/filas/colores que el PDF (extractEntriesFromSource).
+// ============================================================
+let ocrWorkerPromise = null;
+function getOcrWorker() {
+    if (!ocrWorkerPromise) {
+        ocrWorkerPromise = Tesseract.createWorker(IMAGE_OCR_LANG);
+    }
+    return ocrWorkerPromise;
+}
+
+function loadImageFromFile(file) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        img.onload = () => resolve({ img, url });
+        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('No se pudo leer la imagen')); };
+        img.src = url;
+    });
+}
+
+// dibuja la foto en un canvas (achicándola si es enorme, para que el OCR no tarde de más)
+function drawImageToCanvas(img, maxDim) {
+    let w = img.naturalWidth, h = img.naturalHeight;
+    if (Math.max(w, h) > maxDim) {
+        const ratio = maxDim / Math.max(w, h);
+        w = Math.round(w * ratio);
+        h = Math.round(h * ratio);
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(img, 0, 0, w, h);
+    return canvas;
+}
+
+// pasa la salida jerárquica de Tesseract (blocks → paragraphs → lines → words)
+// a la misma forma plana {str,x,y,width,height} que ya usa el resto del parser
+function wordsFromOcrResult(data) {
+    const items = [];
+    if (data && Array.isArray(data.blocks) && data.blocks.length > 0) {
+        for (const block of data.blocks) {
+            for (const para of block.paragraphs || []) {
+                for (const line of para.lines || []) {
+                    for (const word of line.words || []) {
+                        const text = String(word.text || '').trim();
+                        if (!text || !word.bbox) continue;
+                        const { x0, y0, x1, y1 } = word.bbox;
+                        items.push({ str: text, x: x0, y: y1, width: x1 - x0, height: y1 - y0 });
+                    }
+                }
+            }
+        }
+    } else if (data && Array.isArray(data.words)) {
+        // compatibilidad con versiones donde las palabras vienen en un array plano
+        for (const word of data.words) {
+            const text = String(word.text || '').trim();
+            if (!text || !word.bbox) continue;
+            const { x0, y0, x1, y1 } = word.bbox;
+            items.push({ str: text, x: x0, y: y1, width: x1 - x0, height: y1 - y0 });
+        }
+    }
+    return items;
+}
+
+// tamaño de letra "típico" en la foto, para poder escalar los números
+// mágicos del parser (que están calibrados para el PDF) según cada foto
+function medianWordHeight(items) {
+    const heights = items.map(it => it.height).filter(h => h > 1).sort((a, b) => a - b);
+    if (heights.length === 0) return IMAGE_REFERENCE_TEXT_HEIGHT;
+    return heights[Math.floor(heights.length / 2)];
+}
+
+async function parseImageFiles(files) {
+    if (!files || files.length === 0) return;
+    if (typeof Tesseract === 'undefined') {
+        showToast('El lector de fotos (OCR) no cargó. Revisá tu conexión e intentá de nuevo.');
+        return;
+    }
+
+    const dropZone = document.getElementById('pdfDropZone');
+    const dropText = document.getElementById('pdfDropText');
+    const defaultDropText = dropText ? dropText.textContent : '';
+    const errorBox = document.getElementById('pdfError');
+    errorBox.style.display = 'none';
+    if (dropZone) dropZone.classList.add('processing');
+
+    const monthState = { lastGlobalDay: 0, globalMonth: 8, globalYear: new Date().getFullYear() };
+    const allEntries = [];
+    const dbgTotal = { images: 0, weekGroups: 0, cols: 0, rows: 0, cells: 0, grayCells: 0 };
+
+    try {
+        const worker = await getOcrWorker();
+
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            if (dropText) dropText.textContent = files.length > 1
+                ? `Leyendo foto ${i + 1} de ${files.length}…`
+                : 'Leyendo la foto…';
+
+            const yearInName = String(file.name || '').match(/20\d{2}/);
+            if (yearInName) monthState.globalYear = parseInt(yearInName[0], 10);
+
+            const { img, url } = await loadImageFromFile(file);
+            const canvas = drawImageToCanvas(img, IMAGE_MAX_DIMENSION);
+            URL.revokeObjectURL(url);
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+            const { data } = await worker.recognize(canvas, {}, { text: true, blocks: true });
+            const items = wordsFromOcrResult(data);
+            dbgTotal.images++;
+            if (items.length === 0) continue;
+
+            const detectedMonthName = detectMonthFromTexts(items);
+            const baseMonth = MONTH_MAP[detectedMonthName] ?? monthState.globalMonth;
+            const geomScale = medianWordHeight(items) / IMAGE_REFERENCE_TEXT_HEIGHT;
+
+            const result = extractEntriesFromSource(
+                items, imageData, /* colorScale */ 1, geomScale, baseMonth, monthState, /* fixedTextHeight */ null
+            );
+            allEntries.push(...result.entries);
+            dbgTotal.weekGroups += result.dbg.weekGroups;
+            dbgTotal.cols += result.dbg.cols;
+            dbgTotal.rows += result.dbg.rows;
+            dbgTotal.cells += result.dbg.cells;
+            dbgTotal.grayCells += result.dbg.grayCells;
+        }
+
+        const merged = mergeConsecutive(allEntries);
+        merged.sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start));
+
+        pdfParsedData = merged;
+        showPdfPreview(merged);
+        console.log('[HORAX] Debug foto:', dbgTotal, '→', merged.length, 'extras');
+
+        if (merged.length === 0) {
+            errorBox.style.display = 'block';
+            errorBox.textContent = 'No se detectaron extras en la foto. Probá con más luz, sin inclinar la cámara, y que el texto se lea nítido.';
+            showToast('No se detectaron extras');
+        }
+    } catch (err) {
+        console.error('[HORAX] Error OCR:', err);
+        errorBox.style.display = 'block';
+        errorBox.textContent = 'Error al leer la imagen: ' + err.message;
+        showToast('Error al leer la imagen');
+    } finally {
+        if (dropZone) dropZone.classList.remove('processing');
+        if (dropText) dropText.textContent = defaultDropText;
+    }
 }
 
 function mergeConsecutive(entries) {
@@ -1383,18 +1587,33 @@ function init() {
 
     const dropZone = document.getElementById('pdfDropZone');
     const fileInput = document.getElementById('pdfFileInput');
+
+    // Reparte los archivos elegidos: si hay fotos, se procesan todas juntas
+    // con OCR; si no hay ninguna foto pero sí un PDF, se usa el lector de PDF.
+    function handleImportFiles(fileList) {
+        const files = Array.from(fileList || []);
+        if (files.length === 0) return;
+        const isPdf = f => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf');
+        const isImage = f => f.type.startsWith('image/');
+        const images = files.filter(isImage);
+        if (images.length > 0) {
+            parseImageFiles(images);
+            return;
+        }
+        const pdf = files.find(isPdf);
+        if (pdf) { parsePdfFile(pdf); return; }
+        showToast('Solo se permiten archivos PDF o fotos (imágenes)');
+    }
+
     dropZone.addEventListener('click', () => fileInput.click());
     dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
     dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
     dropZone.addEventListener('drop', e => {
         e.preventDefault(); dropZone.classList.remove('dragover');
-        const f = e.dataTransfer.files[0];
-        if (f && (f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'))) parsePdfFile(f);
-        else if (f) showToast('Solo se permiten archivos PDF');
+        handleImportFiles(e.dataTransfer.files);
     });
     fileInput.addEventListener('change', e => {
-        const f = e.target.files[0];
-        if (f) parsePdfFile(f);
+        handleImportFiles(e.target.files);
         fileInput.value = '';
     });
     document.getElementById('pdfImportBtn').addEventListener('click', importPdfData);
