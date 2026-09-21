@@ -136,27 +136,11 @@ function applyProfileToHeader() {
     const name = profileDisplayName();
     const title = document.getElementById('headerTitle');
     const sub = document.getElementById('headerSubtitle');
-    const icon = document.getElementById('profileIcon');
-    const avatar = document.getElementById('profileAvatar');
     const chip = document.getElementById('profileChip');
 
     if (title) title.textContent = name || 'HORAX';
     if (sub) sub.style.display = name ? 'block' : 'none';
     if (chip) chip.title = name ? 'Cambiar mi nombre' : 'HORAX';
-
-    const photo = currentUser && currentUser.photoURL;
-    if (avatar && icon) {
-        if (photo) {
-            avatar.onerror = () => { avatar.style.display = 'none'; icon.style.display = ''; };
-            avatar.src = photo;
-            avatar.alt = name || 'Foto de perfil';
-            avatar.style.display = 'block';
-            icon.style.display = 'none';
-        } else {
-            avatar.style.display = 'none';
-            icon.style.display = '';
-        }
-    }
 }
 
 function openProfileModal(firstTime) {
