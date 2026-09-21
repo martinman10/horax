@@ -213,6 +213,40 @@ function addEntry(date, start, end, person) {
     overtimeData.push({ id: maxId + 1, date, start, end, person: person.trim(), done: false });
     saveData(); renderAll(); showToast(`Extra agregada para ${person}`);
 }
+function editEntry(id, date, start, end, person) {
+    const entry = overtimeData.find(e => e.id === id);
+    if (!entry) return;
+    entry.date = date; entry.start = start; entry.end = end; entry.person = person.trim();
+    saveData(); renderAll(); showToast('Extra actualizada');
+}
+
+let editingEntryId = null;
+function openEditModal(id) {
+    const entry = overtimeData.find(e => e.id === id);
+    if (!entry) return;
+    editingEntryId = id;
+    document.getElementById('editDate').value = entry.date;
+    document.getElementById('editStart').value = entry.start;
+    document.getElementById('editEnd').value = entry.end;
+    document.getElementById('editPerson').value = entry.person;
+    document.getElementById('editModal').style.display = 'flex';
+}
+function closeEditModal() {
+    editingEntryId = null;
+    document.getElementById('editModal').style.display = 'none';
+}
+function saveEditFromModal() {
+    if (editingEntryId == null) return;
+    const date = document.getElementById('editDate').value;
+    const start = document.getElementById('editStart').value;
+    const end = document.getElementById('editEnd').value;
+    const person = document.getElementById('editPerson').value.trim();
+    if (!date || !start || !end || !person) { showToast('Completá todos los campos'); return; }
+    if (start >= end) { showToast('El inicio debe ser anterior al final'); return; }
+    editEntry(editingEntryId, date, start, end, person);
+    selectedDate = date;
+    closeEditModal();
+}
 
 function renderCalendar() {
     const grid = document.getElementById('calendarGrid');
@@ -312,6 +346,7 @@ function renderDayDetail(dateStr) {
                     <div class="ot-person" style="color:${color};">${e.person}</div>
                     <div class="ot-time">${e.start} - ${e.end}</div>
                 </div>
+                <button class="ot-edit" data-id="${e.id}"><i class="fas fa-pen"></i></button>
                 <button class="ot-delete" data-id="${e.id}"><i class="fas fa-trash-alt"></i></button>
             </div>`;
     }
@@ -321,6 +356,12 @@ function renderDayDetail(dateStr) {
         el.addEventListener('click', ev => {
             ev.stopPropagation();
             toggleDone(parseInt(el.dataset.id, 10));
+        });
+    });
+    content.querySelectorAll('.ot-edit').forEach(el => {
+        el.addEventListener('click', ev => {
+            ev.stopPropagation();
+            openEditModal(parseInt(el.dataset.id, 10));
         });
     });
     content.querySelectorAll('.ot-delete').forEach(el => {
@@ -1159,6 +1200,12 @@ function init() {
     });
     const logoutBtn = document.getElementById('logoutBtn');
     if (logoutBtn) logoutBtn.addEventListener('click', () => auth.signOut());
+
+    document.getElementById('editSaveBtn').addEventListener('click', saveEditFromModal);
+    document.getElementById('editCancelBtn').addEventListener('click', closeEditModal);
+    document.getElementById('editModal').addEventListener('click', ev => {
+        if (ev.target.id === 'editModal') closeEditModal();
+    });
 
     document.getElementById('prevMonth').addEventListener('click', () => {
         currentMonth--; if (currentMonth < 0) { currentMonth = 11; currentYear--; }

@@ -172,6 +172,34 @@
 
     <div id="appLoading" class="app-loading"><i class="fas fa-circle-notch fa-spin"></i></div>
 
+    <div id="editModal" class="modal-overlay" style="display:none;">
+        <div class="modal-card">
+            <h2><i class="fas fa-pen" style="color:var(--primary);margin-right:8px;"></i>Editar extra</h2>
+            <div class="form-group">
+                <label>Fecha</label>
+                <input type="date" id="editDate" />
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Desde</label>
+                    <input type="time" id="editStart" />
+                </div>
+                <div class="form-group">
+                    <label>Hasta</label>
+                    <input type="time" id="editEnd" />
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Persona</label>
+                <input type="text" id="editPerson" placeholder="Nombre" list="personList" />
+            </div>
+            <div class="modal-actions">
+                <button class="btn-secondary" id="editCancelBtn">Cancelar</button>
+                <button class="btn-submit" id="editSaveBtn"><i class="fas fa-save"></i> Guardar cambios</button>
+            </div>
+        </div>
+    </div>
+
     <!-- App Logic -->
     <script src="./js/app.js" defer></script>
     <script>
