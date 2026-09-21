@@ -1,8 +1,98 @@
 // ============================================================
 //  CONFIGURACIÓN
 // ============================================================
-const STORAGE_KEY = 'xtraspilar_v22';
+const STORAGE_KEY = 'xtraspilar_v22'; // no cambiar: es la clave donde ya hay datos guardados en este dispositivo
 const DEBUG = false; // ← poné true solo si querés ver el overlay de depuración
+
+// ============================================================
+//  FIREBASE (login con Google + datos en la nube, separados por persona)
+// ============================================================
+const firebaseConfig = {
+    apiKey: "AIzaSyAPdRYdmuncIesZBYT3c-VK3W3XzFBL_ss",
+    authDomain: "horax-e41c6.firebaseapp.com",
+    projectId: "horax-e41c6",
+    storageBucket: "horax-e41c6.firebasestorage.app",
+    messagingSenderId: "440392502477",
+    appId: "1:440392502477:web:64d4da1ef3ffa85b412d84"
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+// Permite que la app siga andando sin internet: guarda una copia local
+// de lo último sincronizado y lo manda apenas vuelve la conexión.
+db.enablePersistence({ synchronizeTabs: true }).catch(err => {
+    console.warn('[HORAX] Persistencia offline no disponible:', err.code);
+});
+
+let currentUser = null;
+let userDocUnsubscribe = null;
+let suppressNextSnapshot = false; // evita re-renderizar por nuestro propio guardado
+
+function userDocRef(uid) { return db.collection('users').doc(uid); }
+
+function showLoading(show) {
+    const el = document.getElementById('appLoading');
+    if (el) el.style.display = show ? 'flex' : 'none';
+}
+function showLoginScreen(show) {
+    const login = document.getElementById('loginScreen');
+    const app = document.getElementById('app');
+    if (login) login.style.display = show ? 'flex' : 'none';
+    if (app) app.style.display = show ? 'none' : 'flex';
+}
+
+async function handleSignedIn(user) {
+    currentUser = user;
+    showLoginScreen(false);
+    const logoutBtn = document.getElementById('logoutBtn');
+    if (logoutBtn) logoutBtn.style.display = 'flex';
+
+    const ref = userDocRef(user.uid);
+    try {
+        const snap = await ref.get();
+        if (snap.exists) {
+            overtimeData = (snap.data() && snap.data().entries) || [];
+        } else {
+            // Primera vez que esta cuenta inicia sesión: si había datos guardados
+            // en este mismo dispositivo (de antes del login), los subimos a la nube.
+            loadData();
+            await ref.set({ entries: overtimeData, email: user.email || null }, { merge: true });
+        }
+    } catch (err) {
+        console.error('[HORAX] Error cargando datos:', err);
+        loadData(); // como red de seguridad, mostramos lo que haya local
+        showToast('No se pudo conectar a la nube, usando datos locales');
+    }
+
+    renderAll();
+    showLoading(false);
+
+    if (userDocUnsubscribe) userDocUnsubscribe();
+    userDocUnsubscribe = ref.onSnapshot(doc => {
+        if (suppressNextSnapshot) { suppressNextSnapshot = false; return; }
+        if (!doc.exists) return;
+        const remote = (doc.data() && doc.data().entries) || [];
+        if (JSON.stringify(remote) !== JSON.stringify(overtimeData)) {
+            overtimeData = remote;
+            renderAll();
+        }
+    }, err => console.error('[HORAX] Error escuchando cambios:', err));
+}
+
+function handleSignedOut() {
+    currentUser = null;
+    overtimeData = [];
+    if (userDocUnsubscribe) { userDocUnsubscribe(); userDocUnsubscribe = null; }
+    const logoutBtn = document.getElementById('logoutBtn');
+    if (logoutBtn) logoutBtn.style.display = 'none';
+    showLoading(false);
+    showLoginScreen(true);
+}
+
+auth.onAuthStateChanged(user => {
+    if (user) handleSignedIn(user);
+    else handleSignedOut();
+});
 
 const COLOR_PALETTE = [
     '#B4A0E5','#FFF2CC','#A8E6A0','#0A2A5A','#F48FB1','#FFB86C','#6ECAC8',
@@ -71,6 +161,15 @@ function loadData() {
 }
 function saveData() {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(overtimeData)); } catch (_) {}
+    if (currentUser) {
+        suppressNextSnapshot = true;
+        userDocRef(currentUser.uid)
+            .set({ entries: overtimeData, email: currentUser.email || null }, { merge: true })
+            .catch(err => {
+                console.error('[HORAX] Error guardando en la nube:', err);
+                showToast('No se pudo guardar en la nube (sin conexión)');
+            });
+    }
     updateBadges();
 }
 function clearAllData() {
@@ -1036,14 +1135,30 @@ function importPdfData() {
 }
 
 function init() {
-    loadData();
     const today = new Date();
     currentMonth = today.getMonth();
     currentYear = today.getFullYear();
     selectedDate = formatDate(today);
     const addDate = document.getElementById('addDate');
     if (addDate) addDate.value = formatDate(today);
-    renderAll();
+
+    const googleBtn = document.getElementById('googleLoginBtn');
+    if (googleBtn) googleBtn.addEventListener('click', () => {
+        const errorEl = document.getElementById('loginError');
+        if (errorEl) errorEl.style.display = 'none';
+        const provider = new firebase.auth.GoogleAuthProvider();
+        auth.signInWithPopup(provider).catch(err => {
+            console.error('[HORAX] Error de login:', err);
+            if (errorEl) {
+                errorEl.textContent = err.code === 'auth/unauthorized-domain'
+                    ? 'Este sitio todavía no está autorizado en Firebase para iniciar sesión.'
+                    : 'No se pudo iniciar sesión: ' + err.message;
+                errorEl.style.display = 'block';
+            }
+        });
+    });
+    const logoutBtn = document.getElementById('logoutBtn');
+    if (logoutBtn) logoutBtn.addEventListener('click', () => auth.signOut());
 
     document.getElementById('prevMonth').addEventListener('click', () => {
         currentMonth--; if (currentMonth < 0) { currentMonth = 11; currentYear--; }

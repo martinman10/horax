@@ -32,9 +32,26 @@
 
     <!-- PDF.js - debe cargarse antes que app.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+    <!-- Firebase (login con Google + guardado en la nube) -->
+    <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
 </head>
 <body>
-<div id="app">
+<div id="loginScreen" class="login-screen" style="display:none;">
+    <div class="login-card">
+        <div class="logo"><i class="fas fa-users"></i></div>
+        <h1>HORAX</h1>
+        <p>Iniciá sesión con tu cuenta de Google para ver y cargar tus horas extras.</p>
+        <button id="googleLoginBtn" class="btn-google">
+            <i class="fab fa-google"></i> Continuar con Google
+        </button>
+        <p id="loginError" class="login-error" style="display:none;"></p>
+    </div>
+</div>
+
+<div id="app" style="display:none;">
         <!-- HEADER -->
         <header class="app-header">
             <div class="logo">
@@ -42,6 +59,7 @@
                 <h1>HORAX</h1>
             </div>
             <div class="header-actions">
+                <button id="logoutBtn" title="Cerrar sesión" style="display:none;"><i class="fas fa-sign-out-alt"></i></button>
                 <button id="resetBtn" title="Cargar datos de ejemplo"><i class="fas fa-undo-alt"></i></button>
                 <button id="clearBtn" title="Vaciar todos los datos"><i class="fas fa-trash-alt"></i></button>
             </div>
@@ -151,6 +169,8 @@
         <!-- TOAST -->
         <div class="toast" id="toast"></div>
     </div>
+
+    <div id="appLoading" class="app-loading"><i class="fas fa-circle-notch fa-spin"></i></div>
 
     <!-- App Logic -->
     <script src="./js/app.js" defer></script>
