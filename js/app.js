@@ -47,11 +47,15 @@ async function handleSignedIn(user) {
     const logoutBtn = document.getElementById('logoutBtn');
     if (logoutBtn) logoutBtn.style.display = 'flex';
 
+    userProfile = loadLocalProfile(user.uid); // lo que haya en este dispositivo, por si la nube tarda
+
     const ref = userDocRef(user.uid);
     try {
         const snap = await ref.get();
         if (snap.exists) {
-            overtimeData = (snap.data() && snap.data().entries) || [];
+            const data = snap.data() || {};
+            overtimeData = data.entries || [];
+            if (data.profile && data.profile.firstName) userProfile = data.profile;
         } else {
             // Primera vez que esta cuenta inicia sesión: si había datos guardados
             // en este mismo dispositivo (de antes del login), los subimos a la nube.
@@ -64,14 +68,24 @@ async function handleSignedIn(user) {
         showToast('No se pudo conectar a la nube, usando datos locales');
     }
 
+    applyProfileToHeader();
     renderAll();
     showLoading(false);
+
+    // Si todavía no eligió cómo llamarse, se lo pedimos antes de empezar.
+    if (!userProfile || !userProfile.firstName) openProfileModal(true);
 
     if (userDocUnsubscribe) userDocUnsubscribe();
     userDocUnsubscribe = ref.onSnapshot(doc => {
         if (suppressNextSnapshot) { suppressNextSnapshot = false; return; }
         if (!doc.exists) return;
-        const remote = (doc.data() && doc.data().entries) || [];
+        const data = doc.data() || {};
+        const remote = data.entries || [];
+        if (data.profile && JSON.stringify(data.profile) !== JSON.stringify(userProfile)) {
+            userProfile = data.profile;
+            saveLocalProfile();
+            applyProfileToHeader();
+        }
         if (JSON.stringify(remote) !== JSON.stringify(overtimeData)) {
             overtimeData = remote;
             renderAll();
@@ -81,12 +95,130 @@ async function handleSignedIn(user) {
 
 function handleSignedOut() {
     currentUser = null;
+    userProfile = null;
+    applyProfileToHeader();
+    closeProfileModal(true);
     overtimeData = [];
     if (userDocUnsubscribe) { userDocUnsubscribe(); userDocUnsubscribe = null; }
     const logoutBtn = document.getElementById('logoutBtn');
     if (logoutBtn) logoutBtn.style.display = 'none';
     showLoading(false);
     showLoginScreen(true);
+}
+
+// ============================================================
+//  PERFIL DE LA PERSONA (nombre que se muestra en el header)
+// ============================================================
+let userProfile = null;
+const PROFILE_KEY_PREFIX = 'horax_profile_';
+
+function loadLocalProfile(uid) {
+    try {
+        const raw = localStorage.getItem(PROFILE_KEY_PREFIX + uid);
+        const parsed = raw ? JSON.parse(raw) : null;
+        return parsed && parsed.firstName ? parsed : null;
+    } catch (_) { return null; }
+}
+function saveLocalProfile() {
+    if (!currentUser) return;
+    try {
+        if (userProfile) localStorage.setItem(PROFILE_KEY_PREFIX + currentUser.uid, JSON.stringify(userProfile));
+        else localStorage.removeItem(PROFILE_KEY_PREFIX + currentUser.uid);
+    } catch (_) {}
+}
+
+function profileDisplayName() {
+    if (!userProfile) return '';
+    return [userProfile.firstName, userProfile.lastName].filter(Boolean).join(' ').trim();
+}
+
+function applyProfileToHeader() {
+    const name = profileDisplayName();
+    const title = document.getElementById('headerTitle');
+    const sub = document.getElementById('headerSubtitle');
+    const icon = document.getElementById('profileIcon');
+    const avatar = document.getElementById('profileAvatar');
+    const chip = document.getElementById('profileChip');
+
+    if (title) title.textContent = name || 'HORAX';
+    if (sub) sub.style.display = name ? 'block' : 'none';
+    if (chip) chip.title = name ? 'Cambiar mi nombre' : 'HORAX';
+
+    const photo = currentUser && currentUser.photoURL;
+    if (avatar && icon) {
+        if (photo) {
+            avatar.onerror = () => { avatar.style.display = 'none'; icon.style.display = ''; };
+            avatar.src = photo;
+            avatar.alt = name || 'Foto de perfil';
+            avatar.style.display = 'block';
+            icon.style.display = 'none';
+        } else {
+            avatar.style.display = 'none';
+            icon.style.display = '';
+        }
+    }
+}
+
+function openProfileModal(firstTime) {
+    const modal = document.getElementById('profileModal');
+    if (!modal) return;
+    const firstInput = document.getElementById('profileFirstName');
+    const lastInput = document.getElementById('profileLastName');
+
+    let first = (userProfile && userProfile.firstName) || '';
+    let last = (userProfile && userProfile.lastName) || '';
+    // La primera vez proponemos el nombre de la cuenta de Google, editable.
+    if (!first && currentUser && currentUser.displayName) {
+        const parts = currentUser.displayName.trim().split(/\s+/);
+        first = parts.shift() || '';
+        last = parts.join(' ');
+    }
+    firstInput.value = first;
+    lastInput.value = last;
+
+    document.getElementById('profileModalTitle').innerHTML =
+        `<i class="fas fa-id-badge" style="color:var(--primary);margin-right:8px;"></i>` +
+        (firstTime ? '¿Cómo te llamás?' : 'Cambiar mi nombre');
+    document.getElementById('profileCancelBtn').style.display = firstTime ? 'none' : 'block';
+    document.getElementById('profileError').style.display = 'none';
+    modal.dataset.firstTime = firstTime ? '1' : '';
+    modal.style.display = 'flex';
+    setTimeout(() => firstInput.focus(), 120);
+}
+
+function closeProfileModal(force) {
+    const modal = document.getElementById('profileModal');
+    if (!modal) return;
+    // Mientras no haya nombre cargado, el modal no se cierra tocando afuera.
+    if (!force && modal.dataset.firstTime === '1') return;
+    modal.style.display = 'none';
+    modal.dataset.firstTime = '';
+}
+
+function saveProfileFromModal() {
+    const firstName = document.getElementById('profileFirstName').value.trim();
+    const lastName = document.getElementById('profileLastName').value.trim();
+    const errorEl = document.getElementById('profileError');
+    if (!firstName) {
+        errorEl.textContent = 'Escribí al menos tu nombre para continuar.';
+        errorEl.style.display = 'block';
+        return;
+    }
+    userProfile = { firstName, lastName };
+    saveLocalProfile();
+    applyProfileToHeader();
+    closeProfileModal(true);
+    showToast(`Listo, ${firstName}`);
+
+    if (currentUser) {
+        suppressNextSnapshot = true;
+        userDocRef(currentUser.uid)
+            .set({ profile: userProfile, email: currentUser.email || null }, { merge: true })
+            .catch(err => {
+                console.error('[HORAX] Error guardando el perfil:', err);
+                showToast('El nombre quedó en este dispositivo, falta subirlo a la nube');
+            });
+    }
 }
 
 auth.onAuthStateChanged(user => {
@@ -1200,6 +1332,29 @@ function init() {
     });
     const logoutBtn = document.getElementById('logoutBtn');
     if (logoutBtn) logoutBtn.addEventListener('click', () => auth.signOut());
+
+    const profileChip = document.getElementById('profileChip');
+    if (profileChip) {
+        profileChip.addEventListener('click', () => {
+            if (currentUser) openProfileModal(false);
+        });
+        profileChip.addEventListener('keydown', ev => {
+            if (ev.key === 'Enter' || ev.key === ' ') {
+                ev.preventDefault();
+                if (currentUser) openProfileModal(false);
+            }
+        });
+    }
+    document.getElementById('profileSaveBtn').addEventListener('click', saveProfileFromModal);
+    document.getElementById('profileCancelBtn').addEventListener('click', () => closeProfileModal(true));
+    document.getElementById('profileModal').addEventListener('click', ev => {
+        if (ev.target.id === 'profileModal') closeProfileModal(false);
+    });
+    ['profileFirstName', 'profileLastName'].forEach(id => {
+        document.getElementById(id).addEventListener('keydown', ev => {
+            if (ev.key === 'Enter') { ev.preventDefault(); saveProfileFromModal(); }
+        });
+    });
 
     document.getElementById('editSaveBtn').addEventListener('click', saveEditFromModal);
     document.getElementById('editCancelBtn').addEventListener('click', closeEditModal);

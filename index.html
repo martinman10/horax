@@ -54,9 +54,13 @@
 <div id="app" style="display:none;">
         <!-- HEADER -->
         <header class="app-header">
-            <div class="logo">
-                <i class="fas fa-users"></i>
-                <h1>HORAX</h1>
+            <div class="logo profile-chip" id="profileChip" role="button" tabindex="0" title="Cambiar mi nombre">
+                <i class="fas fa-users" id="profileIcon"></i>
+                <img id="profileAvatar" class="profile-avatar" alt="" style="display:none;" />
+                <span class="logo-text">
+                    <h1 id="headerTitle">HORAX</h1>
+                    <span class="logo-sub" id="headerSubtitle" style="display:none;">HORAX · tu perfil</span>
+                </span>
             </div>
             <div class="header-actions">
                 <button id="logoutBtn" title="Cerrar sesión" style="display:none;"><i class="fas fa-sign-out-alt"></i></button>
@@ -171,6 +175,26 @@
     </div>
 
     <div id="appLoading" class="app-loading"><i class="fas fa-circle-notch fa-spin"></i></div>
+
+    <div id="profileModal" class="modal-overlay" style="display:none;">
+        <div class="modal-card">
+            <h2 id="profileModalTitle"><i class="fas fa-id-badge" style="color:var(--primary);margin-right:8px;"></i>¿Cómo te llamás?</h2>
+            <p class="modal-hint">Tu nombre aparece arriba en la app, así sabés siempre en qué perfil estás cargando las extras.</p>
+            <div class="form-group">
+                <label>Nombre</label>
+                <input type="text" id="profileFirstName" placeholder="Ej: Karla" autocomplete="given-name" />
+            </div>
+            <div class="form-group">
+                <label>Apellido <span class="label-opt">(opcional)</span></label>
+                <input type="text" id="profileLastName" placeholder="Ej: Pérez" autocomplete="family-name" />
+            </div>
+            <p id="profileError" class="login-error" style="display:none;"></p>
+            <div class="modal-actions">
+                <button class="btn-secondary" id="profileCancelBtn" style="display:none;">Cancelar</button>
+                <button class="btn-submit" id="profileSaveBtn"><i class="fas fa-check"></i> Guardar nombre</button>
+            </div>
+        </div>
+    </div>
 
     <div id="editModal" class="modal-overlay" style="display:none;">
         <div class="modal-card">

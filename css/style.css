@@ -31,8 +31,25 @@
         .app-header .logo i { font-size: 26px; color: var(--primary); background: var(--primary-bg); padding: 8px; border-radius: 12px; }
         .app-header .logo h1 {
             font-size: 18px; font-weight: 700; letter-spacing: -0.3px;
+            max-width: 190px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
             background: linear-gradient(135deg, var(--primary), var(--primary-light));
             -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+        }
+        .profile-chip {
+            background: none; border: none; padding: 4px 8px 4px 4px; margin-left: -4px;
+            border-radius: 14px; font-family: inherit; cursor: pointer;
+            text-align: left; transition: 0.2s; max-width: calc(100% - 100px);
+        }
+        .profile-chip:active { transform: scale(0.97); background: var(--primary-bg); }
+        .profile-chip:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+        .logo-text { display: flex; flex-direction: column; min-width: 0; }
+        .logo-sub {
+            font-size: 11px; font-weight: 500; color: var(--text-light);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px;
+        }
+        .profile-avatar {
+            width: 42px; height: 42px; border-radius: 12px; object-fit: cover;
+            border: 2px solid var(--primary-bg); flex-shrink: 0;
         }
         .header-actions { display: flex; gap: 8px; }
         .header-actions button {
@@ -255,6 +272,8 @@
             box-shadow: var(--shadow); max-width: 360px; width: 100%;
         }
         .modal-card h2 { font-size: 17px; font-weight: 700; margin-bottom: 16px; }
+        .modal-hint { font-size: 13px; color: var(--text-secondary); line-height: 1.45; margin: -8px 0 16px; }
+        .label-opt { font-weight: 400; color: var(--text-light); }
         .modal-actions { display: flex; gap: 10px; margin-top: 4px; }
         .modal-actions .btn-submit { flex: 1.4; }
         .btn-secondary {
