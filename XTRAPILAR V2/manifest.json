@@ -1,0 +1,41 @@
+{
+  "name": "HORAX · Gestión de horas extras",
+  "short_name": "HORAX",
+  "description": "App para gestionar y organizar horas extras de forma simple y visual",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#F7F8FC",
+  "theme_color": "#6C63FF",
+  "orientation": "portrait",
+  "scope": "./",
+  "icons": [
+    {
+      "src": "./icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Agregar extra",
+      "short_name": "Agregar",
+      "description": "Agregar nueva hora extra",
+      "url": "./index.html#add",
+      "icons": [{ "src": "./icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Ver Calendario",
+      "short_name": "Calendario",
+      "description": "Ver calendario de extras",
+      "url": "./index.html#calendar",
+      "icons": [{ "src": "./icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}
