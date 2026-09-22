@@ -934,40 +934,50 @@ async function drawDebugOverlay(page, pageNum, zones, extras) {
 // ============================================================
 function findDayHeaders(words, maxGap) {
     const DAY_RE = /^(LUNES|MARTES|MI[EÉ]RCOLES|JUEVES|VIERNES|S[ÁA]BADO|DOMINGO)\b/;
+    const onlyDayNameRe = new RegExp('^' + DAY_RE.source.slice(1) + '\\.?$');
     const headers = [];
-    const sorted = [...words].sort((a, b) => a.y - b.y || a.x - b.x);
     const usedAsNumber = new Set();
 
-    for (let i = 0; i < sorted.length; i++) {
-        const w = sorted[i];
+    // Caso 1: nombre y número pegados en la misma palabra ("LUNES 15", típico del PDF)
+    for (const w of words) {
         const s = w.str.toUpperCase().trim();
-
         const together = s.match(new RegExp(DAY_RE.source + '\\s+(\\d{1,2})\\b'));
         if (together) {
             const day = parseInt(together[2], 10);
             if (day >= 1 && day <= 31) headers.push({ day, x: w.x + w.width / 2, y: w.y, text: w.str });
-            continue;
         }
+    }
 
-        if (usedAsNumber.has(i)) continue;
-        const onlyDayName = s.match(new RegExp('^' + DAY_RE.source.slice(1) + '\\.?$'));
-        if (!onlyDayName) continue;
+    // Caso 2: nombre y número en palabras separadas ("LUNES" ... "15", típico de OCR).
+    // ★ Ojo: NO se puede asumir que el número aparece DESPUÉS del nombre en un
+    // orden por (y, x) — dos palabras de la misma línea pueden diferir en 1px
+    // de alto (OCR) y terminar en "filas" distintas al ordenar, lo que antes
+    // hacía que se saltee la pareja (ej. "JUEVES"+"10" nunca se emparejaban
+    // aunque "SABADO"+"12" sí, en la misma imagen). Por eso ahora se busca,
+    // para cada nombre de día suelto, el número más cercano en TODA la lista
+    // de palabras, sin depender del orden en que quedaron ordenadas.
+    for (let i = 0; i < words.length; i++) {
+        const w = words[i];
+        const s = w.str.toUpperCase().trim();
+        if (!onlyDayNameRe.test(s)) continue;
 
-        for (let j = i + 1; j < sorted.length; j++) {
-            if (usedAsNumber.has(j)) continue;
-            const w2 = sorted[j];
+        let bestJ = -1, bestGap = Infinity;
+        for (let j = 0; j < words.length; j++) {
+            if (j === i || usedAsNumber.has(j)) continue;
+            const w2 = words[j];
             if (Math.abs(w2.y - w.y) > (w.height || 10) * 1.2) continue;
             if (w2.x < w.x) continue;
-            if (w2.x - (w.x + w.width) > maxGap) break;
-            const numMatch = w2.str.trim().match(/^(\d{1,2})$/);
-            if (numMatch) {
-                const day = parseInt(numMatch[1], 10);
-                if (day >= 1 && day <= 31) {
-                    headers.push({ day, x: (w.x + w2.x + w2.width) / 2, y: w.y, text: `${w.str} ${w2.str}` });
-                    usedAsNumber.add(j);
-                }
-                break;
-            }
+            const gap = w2.x - (w.x + w.width);
+            if (gap > maxGap) continue;
+            if (!/^\d{1,2}$/.test(w2.str.trim())) continue;
+            if (gap < bestGap) { bestGap = gap; bestJ = j; }
+        }
+        if (bestJ === -1) continue;
+        const w2 = words[bestJ];
+        const day = parseInt(w2.str.trim(), 10);
+        if (day >= 1 && day <= 31) {
+            headers.push({ day, x: (w.x + w2.x + w2.width) / 2, y: w.y, text: `${w.str} ${w2.str}` });
+            usedAsNumber.add(bestJ);
         }
     }
     return headers;
@@ -985,8 +995,8 @@ function findDayHeaders(words, maxGap) {
 //     PDF es 1; en una foto depende de la resolución y el tamaño de letra)
 //   - baseMonth / monthState: para reconocer a qué mes pertenece cada columna
 // ============================================================
-function extractEntriesFromSource(rawItems, imageData, colorScale, geomScale, baseMonth, monthState, fixedTextHeight) {
-    const dbg = { weekGroups: 0, cols: 0, rows: 0, cells: 0, grayCells: 0 };
+function extractEntriesFromSource(rawItems, imageData, colorScale, geomScale, baseMonth, monthState, fixedTextHeight, synthesizeRowsIfMissing) {
+    const dbg = { weekGroups: 0, cols: 0, rows: 0, cells: 0, grayCells: 0, syntheticRows: false };
     const entries = [];
     const zones = []; // solo se usa si DEBUG === true, para dibujar el overlay
 
@@ -1084,6 +1094,32 @@ function extractEntriesFromSource(rawItems, imageData, colorScale, geomScale, ba
                 uniqueRows.push(tr);
             }
         }
+
+        // ★ RESPALDO: la foto no trae la columna de horarios de la izquierda
+        // (pasa cuando alguien recorta la foto justo al lado de los días, sin
+        // dejar el "5:00 - 6:00 / 6:00 - 7:00 / ..." visible). Sin esos textos
+        // no hay forma de saber a qué hora corresponde cada fila... salvo que
+        // esta planilla SIEMPRE va de 5:00 a 23:00, en filas parejas de 1 hora
+        // (18 filas en total). Si no se detectó ninguna hora real, se arma esa
+        // grilla estándar repartiendo parejo el alto de la columna. No es tan
+        // preciso como leer la hora real, pero es mucho mejor que no leer nada.
+        if (uniqueRows.length === 0 && synthesizeRowsIfMissing) {
+            const SYNTH_START_HOUR = 5, SYNTH_END_HOUR = 23;
+            const totalRows = SYNTH_END_HOUR - SYNTH_START_HOUR;
+            const rowH = (weekBottomY - weekContentTop) / totalRows;
+            if (rowH > 0) {
+                for (let i = 0; i < totalRows; i++) {
+                    const h = SYNTH_START_HOUR + i;
+                    uniqueRows.push({
+                        start: `${String(h).padStart(2, '0')}:00`,
+                        end: `${String(h + 1).padStart(2, '0')}:00`,
+                        y: weekContentTop + rowH * (i + 0.5)
+                    });
+                }
+                dbg.syntheticRows = true;
+            }
+        }
+
         dbg.rows += uniqueRows.length;
 
         const rowRanges = [];
@@ -1207,7 +1243,8 @@ async function parsePdfFile(file) {
 
                 const monthState = { lastGlobalDay, globalMonth, globalYear };
                 const result = extractEntriesFromSource(
-                    items, rendered.imageData, SCALE, /* geomScale */ 1, baseMonth, monthState, /* fixedTextHeight */ 4
+                    items, rendered.imageData, SCALE, /* geomScale */ 1, baseMonth, monthState, /* fixedTextHeight */ 4,
+                    /* synthesizeRowsIfMissing */ false
                 );
                 lastGlobalDay = monthState.lastGlobalDay;
                 globalMonth = monthState.globalMonth;
@@ -1340,11 +1377,12 @@ async function parseImageFiles(files) {
     const defaultDropText = dropText ? dropText.textContent : '';
     const errorBox = document.getElementById('pdfError');
     errorBox.style.display = 'none';
+    errorBox.style.color = '#EF4444';
     if (dropZone) dropZone.classList.add('processing');
 
     const monthState = { lastGlobalDay: 0, globalMonth: 8, globalYear: new Date().getFullYear() };
     const allEntries = [];
-    const dbgTotal = { images: 0, weekGroups: 0, cols: 0, rows: 0, cells: 0, grayCells: 0 };
+    const dbgTotal = { images: 0, weekGroups: 0, cols: 0, rows: 0, cells: 0, grayCells: 0, syntheticRows: false };
 
     try {
         const worker = await getOcrWorker();
@@ -1374,7 +1412,8 @@ async function parseImageFiles(files) {
             const geomScale = medianWordHeight(items) / IMAGE_REFERENCE_TEXT_HEIGHT;
 
             const result = extractEntriesFromSource(
-                items, imageData, /* colorScale */ 1, geomScale, baseMonth, monthState, /* fixedTextHeight */ null
+                items, imageData, /* colorScale */ 1, geomScale, baseMonth, monthState, /* fixedTextHeight */ null,
+                /* synthesizeRowsIfMissing */ true
             );
             allEntries.push(...result.entries);
             dbgTotal.weekGroups += result.dbg.weekGroups;
@@ -1382,6 +1421,7 @@ async function parseImageFiles(files) {
             dbgTotal.rows += result.dbg.rows;
             dbgTotal.cells += result.dbg.cells;
             dbgTotal.grayCells += result.dbg.grayCells;
+            if (result.dbg.syntheticRows) dbgTotal.syntheticRows = true;
         }
 
         const merged = mergeConsecutive(allEntries);
@@ -1395,6 +1435,13 @@ async function parseImageFiles(files) {
             errorBox.style.display = 'block';
             errorBox.textContent = 'No se detectaron extras en la foto. Probá con más luz, sin inclinar la cámara, y que el texto se lea nítido.';
             showToast('No se detectaron extras');
+        } else if (dbgTotal.syntheticRows) {
+            // la foto no traía la columna de horarios (5:00, 6:00...) visible, así que
+            // los horarios de abajo son una grilla pareja estimada, no lo que dice la foto
+            errorBox.style.display = 'block';
+            errorBox.style.color = '#B45309';
+            errorBox.textContent = 'Ojo: esta foto no traía la columna de horarios a la izquierda, así que los horarios que ves abajo son estimados (repartidos parejo de 5:00 a 23:00), no leídos de la foto. Revisalos antes de importar, o mejor sacá de nuevo la foto incluyendo esa columna.';
+            showToast(`${merged.length} extras con horarios estimados — revisá antes de importar`);
         }
     } catch (err) {
         console.error('[HORAX] Error OCR:', err);
