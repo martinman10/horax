@@ -1023,7 +1023,10 @@ function extractEntriesFromSource(rawItems, imageData, colorScale, geomScale, ba
     for (let wg = 0; wg < weekGroups.length; wg++) {
         const group = weekGroups[wg];
         const groupSorted = [...group].sort((a, b) => a.x - b.x);
-        if (groupSorted.length < 5) continue;
+        // antes pedía al menos 5 columnas (asumía que siempre venía la semana completa).
+        // Una foto puede venir recortada a solo 2, 3 o 4 días — con 2 alcanza para calcular
+        // el ancho de cada columna (por diferencia con la columna vecina).
+        if (groupSorted.length < 2) continue;
 
         const weekTopY = Math.min(...group.map(h => h.y));
         const weekBottomY = (wg < weekGroups.length - 1)
