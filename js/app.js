@@ -679,11 +679,21 @@ function clusterByY(items, tolerance) {
 //  nombres que el PDF partió en 2 líneas dentro de la misma celda
 //  (ej. "ROM" arriba y "LEO" justo debajo → "ROM LEO").
 // ============================================================
-function mergeTextFragments(items) {
+// ★ CORREGIDO: los umbrales (en píxeles) estaban fijos y calibrados SOLO
+// para el espacio de coordenadas del PDF (puntos de PDF, valores chicos:
+// ~4-8px de alto de letra). Una foto se procesa en un canvas de hasta
+// IMAGE_MAX_DIMENSION px, donde la misma letra mide 20-40px o más — con
+// los umbrales viejos, la fusión de fragmentos partidos por el OCR
+// prácticamente nunca se activaba en fotos (todo quedaba 3-5x más chico
+// de lo necesario). Ahora los umbrales se escalan con geomScale, igual
+// que el resto de los "números mágicos" del parser.
+function mergeTextFragments(items, geomScale) {
+    geomScale = geomScale || 1;
     // Paso 1: fusión horizontal, SOLO fragmentos casi pegados
+    const yBucket = 4 * geomScale;
     const linesMap = new Map();
     for (const it of items) {
-        const yKey = Math.round(it.y / 4);
+        const yKey = Math.round(it.y / yBucket);
         if (!linesMap.has(yKey)) linesMap.set(yKey, []);
         linesMap.get(yKey).push(it);
     }
@@ -692,7 +702,7 @@ function mergeTextFragments(items) {
         group.sort((a, b) => a.x - b.x);
         let current = null;
         for (const it of group) {
-            if (current && (it.x - (current.x + current.width)) <= 1) {
+            if (current && (it.x - (current.x + current.width)) <= 1 * geomScale) {
                 current.str += ' ' + it.str;
                 current.width = (it.x + it.width) - current.x;
                 current.height = Math.max(current.height, it.height);
@@ -709,6 +719,7 @@ function mergeTextFragments(items) {
     merged.sort((a, b) => a.y - b.y || a.x - b.x);
     const used = new Array(merged.length).fill(false);
     const out = [];
+    const dyMin = 1.5 * geomScale, dyMax = 5 * geomScale, dxMax = 3 * geomScale;
     for (let i = 0; i < merged.length; i++) {
         if (used[i]) continue;
         let cur = merged[i];
@@ -716,10 +727,10 @@ function mergeTextFragments(items) {
             if (used[j]) continue;
             const cand = merged[j];
             const dy = cand.y - cur.y;
-            if (dy < 1.5) continue;   // misma línea, ignorar
-            if (dy > 5) break;        // ya muy lejos verticalmente, cortar
+            if (dy < dyMin) continue;   // misma línea, ignorar
+            if (dy > dyMax) break;      // ya muy lejos verticalmente, cortar
             const dx = Math.abs(cand.x - cur.x);
-            if (dx <= 3) {            // misma columna aprox. = 2da línea del mismo nombre
+            if (dx <= dxMax) {          // misma columna aprox. = 2da línea del mismo nombre
                 cur = {
                     str: cur.str + ' ' + cand.str,
                     x: Math.min(cur.x, cand.x),
@@ -804,7 +815,34 @@ async function renderPageToImageData(page, scale) {
 // ============================================================
 //  ★ MUESTREO: BBOX DEL TEXTO (v17) con isGray AFINADO
 // ============================================================
-function sampleTextBackground(imageData, xTopLeft, yTopLeft, w, h) {
+// ★ CORREGIDO: los umbrales de color estaban fijos ("hardcodeados") y
+// calibrados EXCLUSIVAMENTE para los píxeles que renderiza pdf.js (colores
+// planos, exactos, sin ruido). Una foto sacada con el celular nunca da esos
+// valores exactos: el balance de blancos de la cámara, la luz ambiente, las
+// sombras y la compresión JPEG corren el color gris real hacia tonos con
+// algo de saturación (cálidos/fríos) y con brillo variable según la zona de
+// la foto. Con el umbral viejo (sat<=8, lum 170-225) casi ninguna celda
+// "gris" de una foto entraba en el rango → 0 horas extra detectadas, aunque
+// el OCR haya leído bien el texto. Por eso ahora los umbrales son un
+// parámetro (DEFAULT_COLOR_TOLERANCE para PDF, sin cambios de
+// comportamiento; IMAGE_COLOR_TOLERANCE, más laxo, para fotos), pero el
+// margen contra los colores fuertes de la planilla (sat >= 30) sigue siendo
+// amplio, así que no se confunde una celda de color con una gris.
+const DEFAULT_COLOR_TOLERANCE = {
+    darkCutoff: 100, whiteCutoff: 248,
+    whiteSatMax: 12, whiteLumMin: 228,
+    graySatMax: 8, grayLumMin: 170, grayLumMax: 225,
+    colorSatMin: 30
+};
+const IMAGE_COLOR_TOLERANCE = {
+    darkCutoff: 55, whiteCutoff: 250,
+    whiteSatMax: 20, whiteLumMin: 238,
+    graySatMax: 24, grayLumMin: 80, grayLumMax: 246,
+    colorSatMin: 32
+};
+
+function sampleTextBackground(imageData, xTopLeft, yTopLeft, w, h, tol) {
+    tol = tol || DEFAULT_COLOR_TOLERANCE;
     const { width, height, data } = imageData;
 
     const x0 = Math.max(0, Math.floor(xTopLeft));
@@ -820,8 +858,8 @@ function sampleTextBackground(imageData, xTopLeft, yTopLeft, w, h) {
             const idx = (py * width + px) * 4;
             const r = data[idx], g = data[idx+1], b = data[idx+2];
             const lum = (r + g + b) / 3;
-            if (lum < 100) continue;
-            if (r > 248 && g > 248 && b > 248) continue;
+            if (lum < tol.darkCutoff) continue;
+            if (r > tol.whiteCutoff && g > tol.whiteCutoff && b > tol.whiteCutoff) continue;
             samples.push([r, g, b]);
         }
     }
@@ -851,13 +889,9 @@ function sampleTextBackground(imageData, xTopLeft, yTopLeft, w, h) {
     const lum = (r + g + b) / 3;
     const coverage = bestList.length / samples.length;
 
-    // ★ ÚNICO CAMBIO respecto a v17:
-    //   antes: isGray = sat < 30 && lum >= 80 && lum <= 245
-    //   ahora: isGray = sat < 30 && lum >= 170 && lum <= 228
-    //   → los reales (177-220) pasan; las rayas (236) quedan afuera
-    const isWhite = sat < 12 && lum > 228;
-    const isGray = sat <= 8 && lum >= 170 && lum <= 225; // gris NEUTRO (sat≈0); excluye violetas/colores pálidos
-    const isColor = sat >= 30;
+    const isWhite = sat < tol.whiteSatMax && lum > tol.whiteLumMin;
+    const isGray = sat <= tol.graySatMax && lum >= tol.grayLumMin && lum <= tol.grayLumMax;
+    const isColor = sat >= tol.colorSatMin;
 
     return {
         r, g, b, sat, lum, coverage,
@@ -995,12 +1029,12 @@ function findDayHeaders(words, maxGap) {
 //     PDF es 1; en una foto depende de la resolución y el tamaño de letra)
 //   - baseMonth / monthState: para reconocer a qué mes pertenece cada columna
 // ============================================================
-function extractEntriesFromSource(rawItems, imageData, colorScale, geomScale, baseMonth, monthState, fixedTextHeight, synthesizeRowsIfMissing) {
+function extractEntriesFromSource(rawItems, imageData, colorScale, geomScale, baseMonth, monthState, fixedTextHeight, synthesizeRowsIfMissing, colorTolerance) {
     const dbg = { weekGroups: 0, cols: 0, rows: 0, cells: 0, grayCells: 0, syntheticRows: false };
     const entries = [];
     const zones = []; // solo se usa si DEBUG === true, para dibujar el overlay
 
-    const words = mergeTextFragments(rawItems);
+    const words = mergeTextFragments(rawItems, geomScale);
     const dayHeaders = findDayHeaders(words, 25 * geomScale);
 
     const sortedHeaders = [...dayHeaders].sort((a, b) => a.y - b.y || a.x - b.x);
@@ -1175,7 +1209,7 @@ function extractEntriesFromSource(rawItems, imageData, colorScale, geomScale, ba
             const bboxW = textW * colorScale;
             const bboxH = textH * colorScale;
 
-            const colorInfo = sampleTextBackground(imageData, bboxX, bboxY, bboxW, bboxH);
+            const colorInfo = sampleTextBackground(imageData, bboxX, bboxY, bboxW, bboxH, colorTolerance);
             dbg.cells++;
 
             if (DEBUG && colorInfo) {
@@ -1244,7 +1278,7 @@ async function parsePdfFile(file) {
                 const monthState = { lastGlobalDay, globalMonth, globalYear };
                 const result = extractEntriesFromSource(
                     items, rendered.imageData, SCALE, /* geomScale */ 1, baseMonth, monthState, /* fixedTextHeight */ 4,
-                    /* synthesizeRowsIfMissing */ false
+                    /* synthesizeRowsIfMissing */ false, /* colorTolerance */ DEFAULT_COLOR_TOLERANCE
                 );
                 lastGlobalDay = monthState.lastGlobalDay;
                 globalMonth = monthState.globalMonth;
@@ -1413,7 +1447,7 @@ async function parseImageFiles(files) {
 
             const result = extractEntriesFromSource(
                 items, imageData, /* colorScale */ 1, geomScale, baseMonth, monthState, /* fixedTextHeight */ null,
-                /* synthesizeRowsIfMissing */ true
+                /* synthesizeRowsIfMissing */ true, /* colorTolerance */ IMAGE_COLOR_TOLERANCE
             );
             allEntries.push(...result.entries);
             dbgTotal.weekGroups += result.dbg.weekGroups;
@@ -1433,7 +1467,8 @@ async function parseImageFiles(files) {
 
         if (merged.length === 0) {
             errorBox.style.display = 'block';
-            errorBox.textContent = 'No se detectaron extras en la foto. Probá con más luz, sin inclinar la cámara, y que el texto se lea nítido.';
+            errorBox.textContent = `No se detectaron extras en la foto. Probá con más luz, sin inclinar la cámara, y que el texto se lea nítido. ` +
+                `Debug: ${dbgTotal.weekGroups} semanas, ${dbgTotal.cols} columnas, ${dbgTotal.rows} filas, ${dbgTotal.cells} celdas con nombre, ${dbgTotal.grayCells} reconocidas como extra.`;
             showToast('No se detectaron extras');
         } else if (dbgTotal.syntheticRows) {
             // la foto no traía la columna de horarios (5:00, 6:00...) visible, así que
