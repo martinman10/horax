@@ -270,6 +270,12 @@ const IMAGE_OCR_LANG = 'spa';
 const IMAGE_MAX_DIMENSION = 2200; // baja fotos gigantes (más rápido, sin perder precisión real)
 const IMAGE_REFERENCE_TEXT_HEIGHT = 8; // alto de letra "de referencia", en la misma escala que usa el PDF
 
+// Rango horario real de la planilla (todas las semanas van de 5:00 a 23:00).
+// Se usa tanto para el reparto parejo "de última" como para descartar anclas
+// de hora que quedaron fuera de ese rango por un error de OCR.
+const SCHEDULE_START_HOUR = 5;
+const SCHEDULE_END_HOUR = 23;
+
 let overtimeData = [];
 let currentMonth = new Date().getMonth();
 let currentYear = new Date().getFullYear();
@@ -787,6 +793,127 @@ function extractPersonName(text) {
     return name;
 }
 
+// ============================================================
+//  ★ NUEVO: CALIBRACIÓN DE FILAS POR HORAS "SUELTAS" (SOLO FOTOS)
+//  Cuando una foto llega recortada y no trae la columna de "5:00 - 6:00 /
+//  6:00 - 7:00 / ...", el único respaldo que había era repartir las horas
+//  parejo de 5 a 23 en toda la altura de la imagen. El problema: si la
+//  franja visible no arranca justo a las 5:00 (por cómo quedó recortada o
+//  diseñada la captura), ese reparto se corre y las celdas caen en la fila
+//  equivocada — o en ninguna — aunque el nombre y el color se hayan leído
+//  perfecto.
+//  Muchas fotos, sin embargo, ya traen la hora exacta pegada a algunos
+//  nombres (ej. "PILAR 14:15", "CAMI O 22:15", "MARTI 14: 30") para marcar
+//  que ese turno no arranca/termina en una hora redonda. Esas horas son
+//  datos reales de la foto, no una estimación: sirven como "anclas"
+//  (posición Y en la imagen ↔ hora real) para calcular la escala real de
+//  esta captura puntual (píxeles por hora) y ubicar el resto de las filas
+//  con mucha más precisión que un reparto uniforme "a ciegas".
+// ============================================================
+
+// Si el texto (ya fusionado por mergeTextFragments) termina en "H:MM" o
+// "H: MM" (el OCR a veces deja un espacio antes de los minutos), devuelve
+// esa hora como número decimal (14:30 → 14.5). Si no hay hora pegada al
+// final, o no cae en el horario real de la planilla, devuelve null.
+function extractTrailingTime(str) {
+    const m = String(str).trim().match(/(\d{1,2})\s*:\s*(\d{2})\s*$/);
+    if (!m) return null;
+    const h = parseInt(m[1], 10);
+    const mm = parseInt(m[2], 10);
+    if (mm < 0 || mm > 59) return null;
+    if (h < SCHEDULE_START_HOUR || h > SCHEDULE_END_HOUR) return null;
+    return h + mm / 60;
+}
+
+// Regresión lineal simple (mínimos cuadrados): hora = a·y + b
+function linearRegression(points) {
+    const n = points.length;
+    if (n < 2) return null;
+    let sumY = 0, sumH = 0, sumYH = 0, sumYY = 0;
+    for (const p of points) {
+        sumY += p.y; sumH += p.hour;
+        sumYH += p.y * p.hour; sumYY += p.y * p.y;
+    }
+    const denom = n * sumYY - sumY * sumY;
+    if (Math.abs(denom) < 1e-6) return null; // todas las anclas casi en la misma fila: no hay escala
+    const a = (n * sumYH - sumY * sumH) / denom;
+    const b = (sumH - a * sumY) / n;
+    return { a, b };
+}
+
+// Busca, dentro del área de la grilla (no en encabezados), palabras que
+// tengan nombre + hora pegada (ej. "PILAR 14:15") y arma la lista de anclas
+// {y, hour}. Solo se usan como ancla las que también contienen un nombre de
+// persona válido, para no confundir una hora suelta de una nota o de un
+// encabezado con una celda real.
+function collectTimeAnchors(words, colRanges, top, bottom) {
+    const anchors = [];
+    for (const w of words) {
+        if (w.y < top || w.y > bottom) continue;
+        if (isHeaderOrLabel(w.str)) continue;
+        const wx = w.x + w.width / 2;
+        let inGrid = false;
+        for (const c of colRanges) {
+            if (wx >= c.left && wx < c.right) { inGrid = true; break; }
+        }
+        if (!inGrid) continue;
+        const hour = extractTrailingTime(w.str);
+        if (hour == null) continue;
+        if (!extractPersonName(w.str)) continue; // "14:15" sola, sin nombre, no sirve de ancla
+        anchors.push({ y: w.y, hour });
+    }
+    return anchors;
+}
+
+// A partir de las anclas, calcula la recta (y → hora) y genera filas de 1h
+// (mismo formato que las filas leídas de la columna de horarios) cubriendo
+// toda el área visible. Si no hay anclas suficientes o confiables, devuelve
+// null y el llamador cae al reparto parejo de siempre.
+function buildCalibratedRowsFromEmbeddedTimes(words, colRanges, top, bottom, geomScale) {
+    let pts = collectTimeAnchors(words, colRanges, top, bottom);
+    if (pts.length < 2) return null;
+
+    let reg = linearRegression(pts);
+    if (!reg) return null;
+
+    // Limpieza: saca anclas que no encajan en la recta (probable error de
+    // OCR leyendo una hora que no es), y recalcula — máximo 2 pasadas.
+    for (let pass = 0; pass < 2; pass++) {
+        const before = pts.length;
+        const cleaned = pts.filter(p => Math.abs((reg.a * p.y + reg.b) - p.hour) <= 1.5);
+        if (cleaned.length < 2 || cleaned.length === before) break;
+        const reg2 = linearRegression(cleaned);
+        if (!reg2) break;
+        pts = cleaned;
+        reg = reg2;
+    }
+
+    if (pts.length < 2) return null;
+    if (new Set(pts.map(p => p.hour)).size < 2) return null; // todas las anclas dicen la misma hora
+    if (Math.abs(reg.a) < 1e-6) return null; // escala degenerada
+
+    const hourAt = y => reg.a * y + reg.b;
+    // margen de 1h de más para no perder la primera/última fila real que
+    // haya quedado justo en el borde de lo visible
+    let hStart = Math.floor(Math.min(hourAt(top), hourAt(bottom))) - 1;
+    let hEnd = Math.ceil(Math.max(hourAt(top), hourAt(bottom))) + 1;
+    hStart = Math.max(SCHEDULE_START_HOUR - 1, hStart);
+    hEnd = Math.min(SCHEDULE_END_HOUR + 1, hEnd);
+    if (hEnd - hStart < 2 || hEnd - hStart > (SCHEDULE_END_HOUR - SCHEDULE_START_HOUR) + 4) return null;
+
+    const rows = [];
+    for (let h = hStart; h < hEnd; h++) {
+        const y = (h - reg.b) / reg.a;
+        rows.push({
+            start: `${String(h).padStart(2, '0')}:00`,
+            end: `${String(h + 1).padStart(2, '0')}:00`,
+            y
+        });
+    }
+    rows.sort((r1, r2) => r1.y - r2.y);
+    return rows;
+}
+
 function detectMonthFromTexts(textItems) {
     for (const it of textItems) {
         const s = String(it.str || '').toLowerCase();
@@ -1030,7 +1157,7 @@ function findDayHeaders(words, maxGap) {
 //   - baseMonth / monthState: para reconocer a qué mes pertenece cada columna
 // ============================================================
 function extractEntriesFromSource(rawItems, imageData, colorScale, geomScale, baseMonth, monthState, fixedTextHeight, synthesizeRowsIfMissing, colorTolerance) {
-    const dbg = { weekGroups: 0, cols: 0, rows: 0, cells: 0, grayCells: 0, syntheticRows: false };
+    const dbg = { weekGroups: 0, cols: 0, rows: 0, cells: 0, grayCells: 0, syntheticRows: false, calibratedRows: false };
     const entries = [];
     const zones = []; // solo se usa si DEBUG === true, para dibujar el overlay
 
@@ -1129,21 +1256,41 @@ function extractEntriesFromSource(rawItems, imageData, colorScale, geomScale, ba
             }
         }
 
-        // ★ RESPALDO: la foto no trae la columna de horarios de la izquierda
-        // (pasa cuando alguien recorta la foto justo al lado de los días, sin
-        // dejar el "5:00 - 6:00 / 6:00 - 7:00 / ..." visible). Sin esos textos
-        // no hay forma de saber a qué hora corresponde cada fila... salvo que
-        // esta planilla SIEMPRE va de 5:00 a 23:00, en filas parejas de 1 hora
-        // (18 filas en total). Si no se detectó ninguna hora real, se arma esa
-        // grilla estándar repartiendo parejo el alto de la columna. No es tan
-        // preciso como leer la hora real, pero es mucho mejor que no leer nada.
+        // ★ RESPALDO, PASO 1 — CALIBRAR CON LAS HORAS QUE YA VIENEN PEGADAS A
+        // ALGUNOS NOMBRES (ej. "PILAR 14:15", "CAMI O 22:15", "MARTI 14: 30").
+        // Cuando la foto no trae la columna de "5:00 - 6:00 / 6:00 - 7:00 /..."
+        // (pasa cuando alguien recorta la foto justo al lado de los días), antes
+        // de resignarnos a repartir las horas "a ojo" y parejo, buscamos esas
+        // horas sueltas que YA están en la propia celda: son datos reales de
+        // la foto, no una estimación. Con al menos dos de esas horas, en
+        // posiciones Y distintas, se puede calcular la escala real (píxeles
+        // por hora) de esta captura puntual y ubicar todas las filas con mucha
+        // más precisión que un reparto uniforme — sin tocar en nada la lectura
+        // del PDF (esto solo corre cuando ya falló encontrar la columna de
+        // horarios, y solo para fotos: synthesizeRowsIfMissing es false en PDF).
         if (uniqueRows.length === 0 && synthesizeRowsIfMissing) {
-            const SYNTH_START_HOUR = 5, SYNTH_END_HOUR = 23;
-            const totalRows = SYNTH_END_HOUR - SYNTH_START_HOUR;
+            const calibrated = buildCalibratedRowsFromEmbeddedTimes(
+                words, colRanges, weekContentTop, weekBottomY, geomScale
+            );
+            if (calibrated) {
+                uniqueRows.push(...calibrated);
+                dbg.calibratedRows = true;
+            }
+        }
+
+        // ★ RESPALDO, PASO 2 — si tampoco hay horas sueltas para calibrar
+        // (ninguna celda trae un horario pegado al nombre), no queda otra
+        // forma de saber a qué hora corresponde cada fila... salvo que esta
+        // planilla SIEMPRE va de 5:00 a 23:00, en filas parejas de 1 hora
+        // (18 filas en total). Se arma esa grilla estándar repartiendo parejo
+        // el alto de la columna. Es el último recurso: no es tan preciso como
+        // leer la hora real, pero es mucho mejor que no leer nada.
+        if (uniqueRows.length === 0 && synthesizeRowsIfMissing) {
+            const totalRows = SCHEDULE_END_HOUR - SCHEDULE_START_HOUR;
             const rowH = (weekBottomY - weekContentTop) / totalRows;
             if (rowH > 0) {
                 for (let i = 0; i < totalRows; i++) {
-                    const h = SYNTH_START_HOUR + i;
+                    const h = SCHEDULE_START_HOUR + i;
                     uniqueRows.push({
                         start: `${String(h).padStart(2, '0')}:00`,
                         end: `${String(h + 1).padStart(2, '0')}:00`,
@@ -1416,7 +1563,7 @@ async function parseImageFiles(files) {
 
     const monthState = { lastGlobalDay: 0, globalMonth: 8, globalYear: new Date().getFullYear() };
     const allEntries = [];
-    const dbgTotal = { images: 0, weekGroups: 0, cols: 0, rows: 0, cells: 0, grayCells: 0, syntheticRows: false };
+    const dbgTotal = { images: 0, weekGroups: 0, cols: 0, rows: 0, cells: 0, grayCells: 0, syntheticRows: false, calibratedRows: false };
 
     try {
         const worker = await getOcrWorker();
@@ -1456,6 +1603,7 @@ async function parseImageFiles(files) {
             dbgTotal.cells += result.dbg.cells;
             dbgTotal.grayCells += result.dbg.grayCells;
             if (result.dbg.syntheticRows) dbgTotal.syntheticRows = true;
+            if (result.dbg.calibratedRows) dbgTotal.calibratedRows = true;
         }
 
         const merged = mergeConsecutive(allEntries);
@@ -1471,12 +1619,22 @@ async function parseImageFiles(files) {
                 `Debug: ${dbgTotal.weekGroups} semanas, ${dbgTotal.cols} columnas, ${dbgTotal.rows} filas, ${dbgTotal.cells} celdas con nombre, ${dbgTotal.grayCells} reconocidas como extra.`;
             showToast('No se detectaron extras');
         } else if (dbgTotal.syntheticRows) {
-            // la foto no traía la columna de horarios (5:00, 6:00...) visible, así que
-            // los horarios de abajo son una grilla pareja estimada, no lo que dice la foto
+            // ninguna de las dos cosas funcionó: ni la columna de horarios de la
+            // izquierda, ni horas sueltas pegadas a algún nombre para calibrar.
+            // Los horarios de abajo son una grilla pareja estimada, no lo que dice la foto.
             errorBox.style.display = 'block';
             errorBox.style.color = '#B45309';
-            errorBox.textContent = 'Ojo: esta foto no traía la columna de horarios a la izquierda, así que los horarios que ves abajo son estimados (repartidos parejo de 5:00 a 23:00), no leídos de la foto. Revisalos antes de importar, o mejor sacá de nuevo la foto incluyendo esa columna.';
+            errorBox.textContent = 'Ojo: esta foto no traía la columna de horarios a la izquierda ni horas sueltas junto a los nombres para calcularlas, así que los horarios que ves abajo son estimados (repartidos parejo de 5:00 a 23:00), no leídos de la foto. Revisalos antes de importar, o mejor sacá de nuevo la foto incluyendo esa columna.';
             showToast(`${merged.length} extras con horarios estimados — revisá antes de importar`);
+        } else if (dbgTotal.calibratedRows) {
+            // la foto no traía la columna de horarios, pero sí había horas sueltas
+            // pegadas a algunos nombres (ej. "14:15", "22:15") y se usaron para
+            // calcular el resto de las filas. Es bastante más confiable que el
+            // reparto parejo, pero igual vale avisar que no vino la columna original.
+            errorBox.style.display = 'block';
+            errorBox.style.color = '#2563EB';
+            errorBox.textContent = 'Esta foto no traía la columna de horarios a la izquierda, pero se calcularon los horarios a partir de las horas que aparecen pegadas a algunos nombres (ej. 14:15, 22:15). Deberían ser bastante confiables, pero revisalos igual antes de importar.';
+            showToast(`${merged.length} extras — horarios calculados a partir de la foto`);
         }
     } catch (err) {
         console.error('[HORAX] Error OCR:', err);
