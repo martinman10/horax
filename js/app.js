@@ -736,7 +736,12 @@ function mergeTextFragments(items, geomScale) {
             if (dy < dyMin) continue;   // misma línea, ignorar
             if (dy > dyMax) break;      // ya muy lejos verticalmente, cortar
             const dx = Math.abs(cand.x - cur.x);
-            if (dx <= dxMax) {          // misma columna aprox. = 2da línea del mismo nombre
+            // ★ CORREGIDO: si el texto es EXACTAMENTE igual al de arriba (ej. "CANDE"
+            // repetido en cada fila de un bloque de varias horas), no es un nombre
+            // partido en 2 líneas — es la MISMA persona en la fila de abajo. Fusionarlos
+            // los convertía en 1 sola celda gigante y se perdían las horas de más abajo.
+            const sameText = cand.str.trim().toUpperCase() === cur.str.trim().toUpperCase();
+            if (dx <= dxMax && !sameText) {          // misma columna aprox. = 2da línea del mismo nombre
                 cur = {
                     str: cur.str + ' ' + cand.str,
                     x: Math.min(cur.x, cand.x),
@@ -1546,6 +1551,94 @@ function medianWordHeight(items) {
     return heights[Math.floor(heights.length / 2)];
 }
 
+// ============================================================
+//  ★ NUEVO: SEGUNDA PASADA DE OCR CON CONTRASTE LOCAL (SOLO FOTOS)
+//  Las celdas que a esta app le importan más son justo las GRISES (son las
+//  que marcan "hora extra"), y en la foto esas celdas tienen letra gris
+//  oscuro sobre fondo gris clarito: mucho menos contraste que el resto de
+//  la planilla (letra oscura sobre blanco, o sobre un color fuerte). Un
+//  umbral "global" — que es más o menos lo que hace Tesseract por dentro
+//  antes de leer — separa bien letra/fondo cuando la diferencia de brillo
+//  es grande, pero con una celda gris sobre gris puede directamente no
+//  detectar el texto. La solución: convertir la foto a blanco y negro con
+//  un umbral LOCAL (algoritmo de Bradley, calculado rápido con una "imagen
+//  integral"), que compara cada píxel contra el promedio de su propia zona
+//  cercana en vez de contra toda la foto — así ese contraste chico alcanza
+//  igual. Se corre el OCR sobre ESA versión también, y se combinan ambas
+//  lecturas (evitando duplicar lo que ya se había leído bien en la
+//  primera pasada), en vez de reemplazar la pasada original — así, si esta
+//  segunda pasada lee peor alguna zona, no se pierde lo que ya andaba bien.
+// ============================================================
+function adaptiveBinarizeForOcr(canvas, windowSize) {
+    const w = canvas.width, h = canvas.height;
+    const srcCtx = canvas.getContext('2d', { willReadFrequently: true });
+    const { data: src } = srcCtx.getImageData(0, 0, w, h);
+
+    const gray = new Float64Array(w * h);
+    for (let i = 0, p = 0; i < src.length; i += 4, p++) {
+        gray[p] = 0.299 * src[i] + 0.587 * src[i + 1] + 0.114 * src[i + 2];
+    }
+
+    // imagen integral: permite sacar el promedio de brillo de cualquier
+    // ventana rectangular en tiempo constante, sin tener que recorrerla
+    // píxel a píxel cada vez (si no, sería demasiado lento en fotos grandes)
+    const stride = w + 1;
+    const integral = new Float64Array(stride * (h + 1));
+    for (let y = 0; y < h; y++) {
+        let rowSum = 0;
+        const rowOut = (y + 1) * stride;
+        const rowPrev = y * stride;
+        for (let x = 0; x < w; x++) {
+            rowSum += gray[y * w + x];
+            integral[rowOut + x + 1] = integral[rowPrev + x + 1] + rowSum;
+        }
+    }
+    const areaSum = (x0, y0, x1, y1) =>
+        integral[(y1 + 1) * stride + (x1 + 1)] - integral[y0 * stride + (x1 + 1)]
+        - integral[(y1 + 1) * stride + x0] + integral[y0 * stride + x0];
+
+    const S = Math.max(12, Math.min(200, Math.round(windowSize || 60)));
+    const half = Math.floor(S / 2);
+    const T = 0.88; // qué tan más oscuro que su entorno tiene que ser un píxel para contar como "letra"
+
+    const outCanvas = document.createElement('canvas');
+    outCanvas.width = w; outCanvas.height = h;
+    const outCtx = outCanvas.getContext('2d');
+    const outData = outCtx.createImageData(w, h);
+
+    for (let y = 0; y < h; y++) {
+        const y0 = Math.max(0, y - half), y1 = Math.min(h - 1, y + half);
+        for (let x = 0; x < w; x++) {
+            const x0 = Math.max(0, x - half), x1 = Math.min(w - 1, x + half);
+            const count = (x1 - x0 + 1) * (y1 - y0 + 1);
+            const mean = areaSum(x0, y0, x1, y1) / count;
+            const isText = gray[y * w + x] < mean * T;
+            const idx = (y * w + x) * 4;
+            const v = isText ? 0 : 255;
+            outData.data[idx] = v; outData.data[idx + 1] = v; outData.data[idx + 2] = v; outData.data[idx + 3] = 255;
+        }
+    }
+    outCtx.putImageData(outData, 0, 0);
+    return outCanvas;
+}
+
+// combina las palabras de una segunda pasada de OCR con las de la primera,
+// evitando agregar de nuevo una palabra que ya se había leído (misma zona)
+function mergeOcrWordSets(primary, secondary) {
+    const out = primary.slice();
+    for (const w2 of secondary) {
+        const cx2 = w2.x + w2.width / 2, cy2 = w2.y - w2.height / 2;
+        let dup = false;
+        for (const w1 of primary) {
+            const cx1 = w1.x + w1.width / 2, cy1 = w1.y - w1.height / 2;
+            const tol = Math.max(w1.height, w2.height, 6);
+            if (Math.abs(cx1 - cx2) < tol * 2 && Math.abs(cy1 - cy2) < tol) { dup = true; break; }
+        }
+        if (!dup) out.push(w2);
+    }
+    return out;
+}
+
 async function parseImageFiles(files) {
     if (!files || files.length === 0) return;
     if (typeof Tesseract === 'undefined') {
@@ -1584,7 +1677,23 @@ async function parseImageFiles(files) {
             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
             const { data } = await worker.recognize(canvas, {}, { text: true, blocks: true });
-            const items = wordsFromOcrResult(data);
+            let items = wordsFromOcrResult(data);
+
+            // ★ NUEVO: segunda pasada sobre una versión con contraste local
+            // (ver adaptiveBinarizeForOcr), para no perder las celdas grises
+            // con poco contraste letra/fondo. Si algo falla acá (foto rarísima,
+            // sin memoria, etc.) seguimos con lo que ya se leyó en la primera
+            // pasada — nunca debe tirar abajo toda la importación.
+            try {
+                const windowSize = medianWordHeight(items) * 6 || 60;
+                const enhancedCanvas = adaptiveBinarizeForOcr(canvas, windowSize);
+                const { data: data2 } = await worker.recognize(enhancedCanvas, {}, { text: true, blocks: true });
+                const items2 = wordsFromOcrResult(data2);
+                items = mergeOcrWordSets(items, items2);
+            } catch (errEnhance) {
+                console.warn('[HORAX] Segunda pasada de OCR (contraste) falló, sigo con la primera:', errEnhance);
+            }
+
             dbgTotal.images++;
             if (items.length === 0) continue;
 
