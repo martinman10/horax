@@ -477,7 +477,7 @@ function renderCalendar() {
     const monthLabel = document.getElementById('monthLabel');
     const monthName = new Date(currentYear, currentMonth)
         .toLocaleDateString('es-ES', { month: 'long' });
-    monthLabel.innerHTML = `${monthName.charAt(0).toUpperCase()+monthName.slice(1)} <small>${currentYear}</small>${todayPillHtml()}`;
+    monthLabel.innerHTML = `${monthName.charAt(0).toUpperCase()+monthName.slice(1)} <small>${currentYear}</small>`;
 
     const firstDay = new Date(currentYear, currentMonth, 1).getDay();
     const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
@@ -516,6 +516,7 @@ function renderCalendar() {
         html += `<button class="day-cell other-month" data-date="${formatDate(dateObj)}">${d}</button>`;
     }
     grid.innerHTML = html;
+    renderTodayBarCalendar();
 
     grid.querySelectorAll('.day-cell').forEach(el => {
         el.addEventListener('click', () => {
@@ -643,10 +644,25 @@ function isCurrentMonthShown() {
     const h = hoyMVD();
     return currentYear === h.year && currentMonth === h.month;
 }
-// Botoncito "Hoy": solo aparece cuando NO estás en el mes actual
-function todayPillHtml() {
-    return isCurrentMonthShown() ? '' :
-        ' <span class="today-pill" role="button" tabindex="0" title="Volver al mes actual">Hoy</span>';
+// Barra "Volver al mes actual": solo aparece cuando NO estás en el mes actual
+function todayBarHtml() {
+    if (isCurrentMonthShown()) return '';
+    const h = hoyMVD();
+    const name = new Date(h.year, h.month, 1).toLocaleDateString('es-ES', { month: 'long' });
+    const label = name.charAt(0).toUpperCase() + name.slice(1) + ' ' + h.year;
+    return `<button type="button" class="today-bar" title="Volver al mes actual">
+        <i class="fas fa-rotate-left"></i> Volver al mes actual <strong>(${label})</strong></button>`;
+}
+// En el Calendario la barra vive en un contenedor que se crea debajo del selector de mes
+function renderTodayBarCalendar() {
+    const nav = document.getElementById('monthLabel').closest('.month-nav');
+    let box = document.getElementById('todayBarCal');
+    if (!box) {
+        box = document.createElement('div');
+        box.id = 'todayBarCal';
+        nav.insertAdjacentElement('afterend', box);
+    }
+    box.innerHTML = todayBarHtml();
 }
 function goToToday() {
     const h = hoyMVD();
@@ -672,9 +688,10 @@ function renderSummary() {
     let html = `
         <div class="month-nav">
             <button id="summaryPrev"><i class="fas fa-chevron-left"></i></button>
-            <span class="month-label">${monthName.charAt(0).toUpperCase() + monthName.slice(1)} <small>${currentYear}</small>${todayPillHtml()}</span>
+            <span class="month-label">${monthName.charAt(0).toUpperCase() + monthName.slice(1)} <small>${currentYear}</small></span>
             <button id="summaryNext"><i class="fas fa-chevron-right"></i></button>
         </div>
+        ${todayBarHtml()}
         <p style="text-align:center;font-size:12px;color:var(--text-light);margin:0 0 12px;">
             Del ${fmtDay(range.startDate)} al ${fmtDay(range.endDate)}
         </p>`;
@@ -2245,12 +2262,7 @@ function init() {
         selectedDate = null; renderCalendar(); renderSummary();
     });
     document.addEventListener('click', ev => {
-        if (ev.target.closest && ev.target.closest('.today-pill')) goToToday();
-    });
-    document.addEventListener('keydown', ev => {
-        if ((ev.key === 'Enter' || ev.key === ' ') && ev.target.classList && ev.target.classList.contains('today-pill')) {
-            ev.preventDefault(); goToToday();
-        }
+        if (ev.target.closest && ev.target.closest('.today-bar')) goToToday();
     });
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.addEventListener('click', () => {

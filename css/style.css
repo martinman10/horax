@@ -369,10 +369,12 @@
 }
 .theme-swatch:active { transform: scale(0.9); }
 .theme-swatch.sel { border-color: var(--text); box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--text); }
-/* Botón "Hoy": vuelve al mes actual (solo se ve si estás en otro mes) */
-.month-nav .today-pill {
-    display: inline-block; margin-left: 6px; padding: 3px 10px; border-radius: 999px;
-    background: var(--primary); color: var(--on-primary); font-size: 12px; font-weight: 700;
-    cursor: pointer; vertical-align: middle; user-select: none; -webkit-tap-highlight-color: transparent;
+/* Barra "Volver al mes actual" (solo se ve si estás en otro mes) */
+.today-bar {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    width: 100%; margin: -6px 0 14px; padding: 10px 12px; border: none; border-radius: var(--radius-sm);
+    background: var(--primary-bg); color: var(--primary-ink); font: inherit; font-size: 13px; font-weight: 600;
+    cursor: pointer; -webkit-tap-highlight-color: transparent;
 }
-.month-nav .today-pill:active { transform: scale(0.92); }
+.today-bar strong { font-weight: 700; }
+.today-bar:active { transform: scale(0.98); }
