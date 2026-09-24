@@ -341,5 +341,9 @@
 .sd-date b { color: var(--text); font-size: 15px; margin-right: 2px; }
 .sd-time { color: var(--text-secondary); }
 .sd-h { font-weight: 700; min-width: 44px; text-align: right; }
-.sd-status { width: 16px; text-align: center; color: #D97706; }
-.sum-detail-item.done .sd-status { color: #059669; }
+.sd-btn { flex-shrink: 0; border: none; background: none; cursor: pointer; padding: 0; }
+.sd-check { width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--border); background: #fff; color: #fff; font-size: 12px; display: flex; align-items: center; justify-content: center; transition: 0.2s; }
+.sd-check:active { transform: scale(0.88); }
+.sd-check.checked { background: #10B981; border-color: #10B981; }
+.sd-edit { width: 28px; height: 28px; color: var(--text-light); font-size: 13px; }
+.sd-edit:active { color: var(--primary); }

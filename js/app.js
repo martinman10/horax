@@ -613,7 +613,8 @@ function renderSummary() {
                     <span class="sd-date"><b>${day}</b> ${wd} · ${mon}</span>
                     <span class="sd-time">${e.start} – ${e.end}</span>
                     <span class="sd-h">${fmtHours(entryHours(e))} h</span>
-                    <i class="fas ${e.done ? 'fa-circle-check' : 'fa-clock'} sd-status"></i>
+                    <button class="sd-btn sd-check ${e.done ? 'checked' : ''}" data-id="${e.id}" title="${e.done ? 'Hecha' : 'Marcar como hecha'}">${e.done ? '<i class="fas fa-check"></i>' : ''}</button>
+                    <button class="sd-btn sd-edit" data-id="${e.id}" title="Editar"><i class="fas fa-pen"></i></button>
                 </div>`;
             }
             html += `</div></td></tr>`;
@@ -637,6 +638,20 @@ function renderSummary() {
             const isOpen = tr.classList.toggle('open');
             if (detail) detail.classList.toggle('open', isOpen);
             if (isOpen) expandedPeople.add(name); else expandedPeople.delete(name);
+        });
+    });
+
+    // Marcar hecha / editar desde el detalle del Resumen
+    container.querySelectorAll('.sd-check').forEach(el => {
+        el.addEventListener('click', ev => {
+            ev.stopPropagation();
+            toggleDone(parseInt(el.dataset.id, 10));
+        });
+    });
+    container.querySelectorAll('.sd-edit').forEach(el => {
+        el.addEventListener('click', ev => {
+            ev.stopPropagation();
+            openEditModal(parseInt(el.dataset.id, 10));
         });
     });
 
