@@ -3,8 +3,13 @@
         :root {
             --primary: #6C63FF; --primary-dark: #5A52D5; --primary-light: #8B83FF;
             --primary-bg: #F0EFFF; --bg: #F7F8FC; --card: #FFFFFF;
+            /* --primary-ink: versión del color legible como texto/ícono sobre fondo claro;
+               --on-primary: color del texto que va encima de un fondo --primary.
+               Los calcula applyTheme() en app.js según el color elegido en el perfil. */
+            --primary-ink: #6C63FF; --primary-ink-light: #8B83FF;
+            --on-primary: #FFFFFF; --primary-rgb: 108, 99, 255;
             --text: #1A1A2E; --text-secondary: #6B7280; --text-light: #9CA3AF;
-            --border: #E5E7EB; --shadow: 0 8px 30px rgba(108, 99, 255, 0.12);
+            --border: #E5E7EB; --shadow: 0 8px 30px rgba(var(--primary-rgb), 0.12);
             --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06);
             --radius: 20px; --radius-sm: 12px;
             --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -28,11 +33,11 @@
             height: var(--header-height); z-index: 10; position: relative;
         }
         .app-header .logo { display: flex; align-items: center; gap: 10px; }
-        .app-header .logo i { font-size: 26px; color: var(--primary); background: var(--primary-bg); padding: 8px; border-radius: 12px; }
+        .app-header .logo i { font-size: 26px; color: var(--primary-ink); background: var(--primary-bg); padding: 8px; border-radius: 12px; }
         .app-header .logo h1 {
             font-size: 18px; font-weight: 700; letter-spacing: -0.3px;
             max-width: 190px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-            background: linear-gradient(135deg, var(--primary), var(--primary-light));
+            background: linear-gradient(135deg, var(--primary-ink), var(--primary-ink-light));
             -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
         }
         .profile-chip {
@@ -41,7 +46,7 @@
             text-align: left; transition: 0.2s; max-width: calc(100% - 100px);
         }
         .profile-chip:active { transform: scale(0.97); background: var(--primary-bg); }
-        .profile-chip:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+        .profile-chip:focus-visible { outline: 2px solid var(--primary-ink); outline-offset: 2px; }
         .logo-text { display: flex; flex-direction: column; min-width: 0; }
         .logo-sub {
             font-size: 11px; font-weight: 500; color: var(--text-light);
@@ -51,7 +56,7 @@
         .header-actions { display: flex; gap: 8px; }
         .header-actions button {
             background: var(--primary-bg); border: none; width: 40px; height: 40px;
-            border-radius: 50%; color: var(--primary); font-size: 18px; cursor: pointer;
+            border-radius: 50%; color: var(--primary-ink); font-size: 18px; cursor: pointer;
             transition: 0.2s; display: flex; align-items: center; justify-content: center;
         }
         .header-actions button:active { transform: scale(0.92); background: #ddd6ff; }
@@ -72,7 +77,7 @@
         .month-nav .month-label small { font-weight: 400; color: var(--text-secondary); font-size: 14px; }
         .month-nav button {
             background: var(--primary-bg); border: none; width: 38px; height: 38px;
-            border-radius: 50%; color: var(--primary); font-size: 16px; cursor: pointer;
+            border-radius: 50%; color: var(--primary-ink); font-size: 16px; cursor: pointer;
             transition: 0.2s; display: flex; align-items: center; justify-content: center;
         }
         .month-nav button:active { transform: scale(0.90); background: #ddd6ff; }
@@ -93,15 +98,15 @@
         }
         .calendar-grid .day-cell:active { transform: scale(0.92); }
         .calendar-grid .day-cell.other-month { color: var(--text-light); opacity: 0.4; }
-        .calendar-grid .day-cell.today { background: var(--primary-bg); color: var(--primary); font-weight: 700; }
+        .calendar-grid .day-cell.today { background: var(--primary-bg); color: var(--primary-ink); font-weight: 700; }
         .calendar-grid .day-cell.has-overtime::after {
             content: ''; position: absolute; bottom: 4px; width: 6px; height: 6px;
-            border-radius: 50%; background: var(--primary);
+            border-radius: 50%; background: var(--primary-ink);
         }
         .calendar-grid .day-cell.has-overtime.done::after { background: #10B981; }
         .calendar-grid .day-cell.has-overtime.pending::after { background: #F59E0B; }
-        .calendar-grid .day-cell.selected { background: var(--primary); color: #fff; }
-        .calendar-grid .day-cell.selected.has-overtime::after { background: #fff; }
+        .calendar-grid .day-cell.selected { background: var(--primary); color: var(--on-primary); }
+        .calendar-grid .day-cell.selected.has-overtime::after { background: var(--on-primary); }
         .day-detail {
             background: var(--card); border-radius: var(--radius); padding: 16px;
             box-shadow: var(--shadow-sm); margin-top: 4px;
@@ -119,7 +124,7 @@
         .ot-item {
             display: flex; align-items: center; gap: 12px; padding: 10px 12px;
             background: var(--bg); border-radius: var(--radius-sm); margin-bottom: 6px;
-            transition: 0.2s; border-left: 3px solid var(--primary);
+            transition: 0.2s; border-left: 3px solid var(--primary-ink);
         }
         .ot-item.done { border-left-color: #10B981; opacity: 0.7; }
         .ot-item .ot-check {
@@ -163,11 +168,11 @@
             -webkit-appearance: none; appearance: none;
         }
         .add-form .form-group input:focus, .add-form .form-group select:focus {
-            outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(108,99,255,0.15);
+            outline: none; border-color: var(--primary-ink); box-shadow: 0 0 0 3px rgba(var(--primary-rgb),0.15);
         }
         .add-form .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
         .add-form .btn-submit {
-            width: 100%; padding: 14px; background: var(--primary); color: #fff;
+            width: 100%; padding: 14px; background: var(--primary); color: var(--on-primary);
             border: none; border-radius: var(--radius-sm); font-size: 16px; font-weight: 600;
             font-family: inherit; cursor: pointer; transition: 0.2s;
             display: flex; align-items: center; justify-content: center; gap: 10px;
@@ -188,7 +193,7 @@
         }
         .tab-bar .tab-btn i { font-size: 22px; transition: 0.2s; }
         .tab-bar .tab-btn:active { transform: scale(0.92); }
-        .tab-bar .tab-btn.active { color: var(--primary); }
+        .tab-bar .tab-btn.active { color: var(--primary-ink); }
         .tab-bar .tab-btn.active i { transform: translateY(-2px); }
         .tab-bar .tab-btn .tab-badge {
             position: absolute; top: 2px; right: 50%;
@@ -209,8 +214,8 @@
         .fab-add {
             position: sticky; bottom: 8px; left: 100%; transform: translateX(-56px);
             width: 48px; height: 48px; border-radius: 50%; background: var(--primary);
-            color: #fff; border: none; font-size: 24px;
-            box-shadow: 0 4px 16px rgba(108,99,255,0.35); cursor: pointer; transition: 0.2s;
+            color: var(--on-primary); border: none; font-size: 24px;
+            box-shadow: 0 4px 16px rgba(var(--primary-rgb),0.35); cursor: pointer; transition: 0.2s;
             display: flex; align-items: center; justify-content: center; margin-top: 8px;
             font-family: inherit;
         }
@@ -227,7 +232,7 @@
             padding: 40px 20px; text-align: center; background: var(--bg);
             transition: 0.2s; cursor: pointer;
         }
-        .pdf-zone.dragover { border-color: var(--primary); background: var(--primary-bg); }
+        .pdf-zone.dragover { border-color: var(--primary-ink); background: var(--primary-bg); }
         .pdf-zone.processing { opacity: 0.6; pointer-events: none; }
         .pdf-zone.processing i { animation: horax-spin 1s linear infinite; }
         @keyframes horax-spin { to { transform: rotate(360deg); } }
@@ -244,14 +249,14 @@
         .pdf-preview .extras-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
         .pdf-preview .extras-list .extra-chip {
             background: var(--bg); padding: 4px 12px; border-radius: 20px;
-            font-size: 12px; border-left: 3px solid var(--primary);
+            font-size: 12px; border-left: 3px solid var(--primary-ink);
         }
         .pdf-preview .people-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
         .pdf-preview .people-chips .person-chip {
             padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; color: #fff;
         }
         .pdf-preview .import-btn {
-            width: 100%; padding: 12px; background: var(--primary); color: #fff;
+            width: 100%; padding: 12px; background: var(--primary); color: var(--on-primary);
             border: none; border-radius: var(--radius-sm); font-weight: 600; font-size: 16px;
             cursor: pointer; transition: 0.2s;
         }
@@ -261,7 +266,7 @@
             flex-shrink: 0; background: none; border: none; color: var(--text-light);
             font-size: 15px; cursor: pointer; padding: 4px 8px 4px 4px; transition: 0.2s;
         }
-        .ot-item .ot-edit:active { color: var(--primary); transform: scale(0.9); }
+        .ot-item .ot-edit:active { color: var(--primary-ink); transform: scale(0.9); }
         .modal-overlay {
             position: fixed; inset: 0; background: rgba(26,26,46,0.45);
             display: flex; align-items: center; justify-content: center;
@@ -293,12 +298,12 @@
         }
         .login-card .logo {
             width: 64px; height: 64px; border-radius: 18px; background: var(--primary-bg);
-            color: var(--primary); font-size: 28px; display: flex; align-items: center;
+            color: var(--primary-ink); font-size: 28px; display: flex; align-items: center;
             justify-content: center; margin: 0 auto 16px;
         }
         .login-card h1 {
             font-size: 22px; font-weight: 700; letter-spacing: -0.3px; margin-bottom: 10px;
-            background: linear-gradient(135deg, var(--primary), var(--primary-light));
+            background: linear-gradient(135deg, var(--primary-ink), var(--primary-ink-light));
             -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
         }
         .login-card p { font-size: 14px; color: var(--text-secondary); margin-bottom: 22px; line-height: 1.4; }
@@ -315,7 +320,7 @@
         .app-loading {
             position: fixed; inset: 0; background: var(--bg); display: flex;
             align-items: center; justify-content: center; z-index: 99;
-            color: var(--primary); font-size: 32px;
+            color: var(--primary-ink); font-size: 32px;
         }
         @media (min-width: 480px) {
             #app { border-radius: 24px; margin-top: 20px; margin-bottom: 20px; height: calc(100% - 40px); box-shadow: 0 20px 60px rgba(0,0,0,0.12); }
@@ -346,7 +351,7 @@
 .sd-check:active { transform: scale(0.88); }
 .sd-check.checked { background: #10B981; border-color: #10B981; }
 .sd-edit { width: 28px; height: 28px; color: var(--text-light); font-size: 13px; }
-.sd-edit:active { color: var(--primary); }
+.sd-edit:active { color: var(--primary-ink); }
 
 /* Deshacer última importación */
 .undo-import { display: none; align-items: center; justify-content: space-between; gap: 12px; background: var(--card); border-radius: var(--radius-sm); box-shadow: var(--shadow-sm); padding: 12px 14px; margin-top: 12px; }
@@ -354,3 +359,13 @@
 .undo-import small { font-size: 12px; color: var(--text-secondary); }
 .undo-import button { border: none; cursor: pointer; background: #FEF3C7; color: #92400E; font-weight: 600; font-family: inherit; font-size: 14px; padding: 10px 14px; border-radius: var(--radius-sm); }
 .undo-import button:active { transform: scale(.96); }
+
+/* Selector de color del perfil */
+.theme-swatches { display: flex; flex-wrap: wrap; gap: 10px; }
+.theme-swatch {
+    width: 38px; height: 38px; border-radius: 50%; cursor: pointer; padding: 0;
+    border: 2px solid var(--border); display: flex; align-items: center; justify-content: center;
+    font-size: 15px; transition: 0.15s;
+}
+.theme-swatch:active { transform: scale(0.9); }
+.theme-swatch.sel { border-color: var(--text); box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--text); }

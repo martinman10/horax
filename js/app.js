@@ -112,6 +112,72 @@ function handleSignedOut() {
 let userProfile = null;
 const PROFILE_KEY_PREFIX = 'horax_profile_';
 
+// ---- Color de la app (uno por perfil) ----
+const THEME_DEFAULT = '#6C63FF';
+const THEME_COLORS = [
+    { hex: '#6C63FF', name: 'Violeta' },
+    { hex: '#FFF486', name: 'Amarillo' },
+    { hex: '#F01D79', name: 'Fucsia' },
+    { hex: '#FEC3E1', name: 'Rosa' },
+    { hex: '#DAC2FE', name: 'Lila' },
+    { hex: '#4CE5CF', name: 'Turquesa' },
+    { hex: '#320016', name: 'Vino' }
+];
+const THEME_KEY = 'horax_theme';
+function hexToRgb(h) { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+function rgbToHex(c) { return '#' + c.map(v => Math.round(v).toString(16).padStart(2, '0')).join('').toUpperCase(); }
+function mixRgb(a, b, t) { return a.map((v, i) => v + (b[i] - v) * t); }
+function relLum(c) {
+    const f = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+    return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]);
+}
+function contrastRatio(l1, l2) { return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05); }
+// Texto que va encima del color: blanco u oscuro, el que se lea mejor
+function onColorFor(hex) {
+    const l = relLum(hexToRgb(hex));
+    return contrastRatio(l, 1) >= 4.0 ? '#FFFFFF' : '#1A1A2E';
+}
+function applyTheme(hex) {
+    const found = THEME_COLORS.find(c => c.hex.toLowerCase() === String(hex || '').toLowerCase());
+    hex = found ? found.hex : THEME_DEFAULT;
+    const rgb = hexToRgb(hex);
+    const BLACK = [0, 0, 0], WHITE = [255, 255, 255];
+    // versión legible como texto/ícono sobre fondo blanco (si el color es muy claro, se oscurece)
+    let ink = rgb;
+    for (let i = 1; i <= 20 && contrastRatio(relLum(ink), 1) < 4.2; i++) ink = mixRgb(rgb, BLACK, i * 0.05);
+    const st = document.documentElement.style;
+    st.setProperty('--primary', hex);
+    st.setProperty('--primary-rgb', rgb.join(', '));
+    st.setProperty('--primary-dark', rgbToHex(mixRgb(rgb, BLACK, 0.15)));
+    st.setProperty('--primary-light', rgbToHex(mixRgb(rgb, WHITE, 0.2)));
+    // fondo suave: si el color es muy claro, el tinte tiene que ser más fuerte para que se note
+    st.setProperty('--primary-bg', rgbToHex(mixRgb(rgb, WHITE, relLum(rgb) > 0.5 ? 0.6 : 0.88)));
+    st.setProperty('--primary-ink', rgbToHex(ink));
+    st.setProperty('--primary-ink-light', rgbToHex(mixRgb(ink, WHITE, 0.25)));
+    st.setProperty('--on-primary', onColorFor(hex));
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', hex);
+    try { localStorage.setItem(THEME_KEY, hex); } catch (_) {}
+}
+// Al abrir, usar el último color usado (evita el "salto" de color mientras carga el perfil)
+try { applyTheme(localStorage.getItem(THEME_KEY)); } catch (_) {}
+let pendingTheme = THEME_DEFAULT;
+function renderThemeSwatches() {
+    const box = document.getElementById('themeSwatches');
+    if (!box) return;
+    box.innerHTML = THEME_COLORS.map(c => {
+        const sel = c.hex.toLowerCase() === pendingTheme.toLowerCase();
+        return `<button type="button" class="theme-swatch ${sel ? 'sel' : ''}" data-hex="${c.hex}" style="background:${c.hex};" title="${c.name}" aria-label="${c.name}" aria-pressed="${sel}">${sel ? `<i class="fas fa-check" style="color:${onColorFor(c.hex)};"></i>` : ''}</button>`;
+    }).join('');
+    box.querySelectorAll('.theme-swatch').forEach(btn => {
+        btn.addEventListener('click', () => {
+            pendingTheme = btn.dataset.hex;
+            applyTheme(pendingTheme); // vista previa en vivo
+            renderThemeSwatches();
+        });
+    });
+}
+
 function loadLocalProfile(uid) {
     try {
         const raw = localStorage.getItem(PROFILE_KEY_PREFIX + uid);
@@ -133,6 +199,7 @@ function profileDisplayName() {
 }
 
 function applyProfileToHeader() {
+    applyTheme(userProfile && userProfile.themeColor);
     const name = profileDisplayName();
     const title = document.getElementById('headerTitle');
     const sub = document.getElementById('headerSubtitle');
@@ -140,7 +207,7 @@ function applyProfileToHeader() {
 
     if (title) title.textContent = name || 'HORAX';
     if (sub) sub.style.display = name ? 'block' : 'none';
-    if (chip) chip.title = name ? 'Cambiar mi nombre' : 'HORAX';
+    if (chip) chip.title = name ? 'Mi perfil (nombre y color)' : 'HORAX';
 }
 
 function openProfileModal(firstTime) {
@@ -159,10 +226,12 @@ function openProfileModal(firstTime) {
     }
     firstInput.value = first;
     lastInput.value = last;
+    pendingTheme = (userProfile && userProfile.themeColor) || THEME_DEFAULT;
+    renderThemeSwatches();
 
     document.getElementById('profileModalTitle').innerHTML =
-        `<i class="fas fa-id-badge" style="color:var(--primary);margin-right:8px;"></i>` +
-        (firstTime ? '¿Cómo te llamás?' : 'Cambiar mi nombre');
+        `<i class="fas fa-id-badge" style="color:var(--primary-ink);margin-right:8px;"></i>` +
+        (firstTime ? '¿Cómo te llamás?' : 'Mi perfil');
     document.getElementById('profileCancelBtn').style.display = firstTime ? 'none' : 'block';
     document.getElementById('profileError').style.display = 'none';
     modal.dataset.firstTime = firstTime ? '1' : '';
@@ -177,6 +246,8 @@ function closeProfileModal(force) {
     if (!force && modal.dataset.firstTime === '1') return;
     modal.style.display = 'none';
     modal.dataset.firstTime = '';
+    // si se cerró sin guardar, volver al color del perfil (deshace la vista previa)
+    applyTheme(userProfile && userProfile.themeColor);
 }
 
 function saveProfileFromModal() {
@@ -188,7 +259,7 @@ function saveProfileFromModal() {
         errorEl.style.display = 'block';
         return;
     }
-    userProfile = { firstName, lastName };
+    userProfile = { firstName, lastName, themeColor: pendingTheme };
     saveLocalProfile();
     applyProfileToHeader();
     closeProfileModal(true);
