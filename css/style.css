@@ -378,3 +378,17 @@
 }
 .today-bar strong { font-weight: 700; }
 .today-bar:active { transform: scale(0.98); }
+
+/* Barra para elegir local (solo la ve quien tiene acceso a todos los locales) */
+.local-bar {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 16px; margin: 0 0 16px;
+    background: var(--card); box-shadow: var(--shadow-sm);
+    color: var(--primary-ink); font-size: 14px;
+}
+.local-bar i { font-size: 14px; opacity: 0.8; }
+.local-bar select {
+    flex: 1; border: 1px solid var(--border, #e5e7eb); border-radius: var(--radius-sm);
+    padding: 8px 10px; font: inherit; font-size: 14px; font-weight: 600;
+    color: var(--text); background: var(--bg, #fff); cursor: pointer;
+}

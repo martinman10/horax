@@ -29,6 +29,16 @@ let userDocUnsubscribe = null;
 let suppressNextSnapshot = false; // evita re-renderizar por nuestro propio guardado
 
 function userDocRef(uid) { return db.collection('users').doc(uid); }
+function localDocRef(id) { return db.collection('locals').doc(id); }
+function localsCollectionRef() { return db.collection('locals'); }
+
+// ---- Multi-local ----
+// currentRole: 'admin' (ve todos los locales) | 'encargada' (ve solo el suyo)
+let currentRole = null;
+let currentLocalId = null;      // local que se está mostrando ahora
+let availableLocals = [];       // [{id, name}] — solo se llena para admin
+let localDocUnsubscribe = null;
+function lastLocalKey(uid) { return 'horax_last_local_' + uid; }
 
 function showLoading(show) {
     const el = document.getElementById('appLoading');
@@ -50,26 +60,57 @@ async function handleSignedIn(user) {
     userProfile = loadLocalProfile(user.uid); // lo que haya en este dispositivo, por si la nube tarda
 
     const ref = userDocRef(user.uid);
+    let data = null;
     try {
         const snap = await ref.get();
-        if (snap.exists) {
-            const data = snap.data() || {};
-            overtimeData = data.entries || [];
-            if (data.profile && data.profile.firstName) userProfile = data.profile;
-        } else {
-            // Primera vez que esta cuenta inicia sesión: si había datos guardados
-            // en este mismo dispositivo (de antes del login), los subimos a la nube.
-            loadData();
-            await ref.set({ entries: overtimeData, email: user.email || null }, { merge: true });
-        }
+        if (snap.exists) data = snap.data() || {};
     } catch (err) {
-        console.error('[HORAX] Error cargando datos:', err);
-        loadData(); // como red de seguridad, mostramos lo que haya local
-        showToast('No se pudo conectar a la nube, usando datos locales');
+        console.error('[HORAX] Error cargando el usuario:', err);
+        showLoading(false);
+        showNoLocalScreen(user.email, true);
+        return;
+    }
+
+    if (!data || !data.role) {
+        // Esta cuenta todavía no fue asignada a ningún local.
+        showLoading(false);
+        showNoLocalScreen(user.email, false);
+        return;
+    }
+
+    if (data.profile && data.profile.firstName) userProfile = data.profile;
+    currentRole = data.role;
+
+    if (currentRole === 'admin') {
+        try {
+            const snap = await localsCollectionRef().get();
+            availableLocals = snap.docs
+                .map(d => ({ id: d.id, name: (d.data() && d.data().name) || d.id }))
+                .sort((a, b) => a.name.localeCompare(b.name, 'es'));
+        } catch (err) {
+            console.error('[HORAX] Error cargando la lista de locales:', err);
+            availableLocals = [];
+        }
+        if (availableLocals.length === 0) {
+            showLoading(false);
+            showNoLocalScreen(user.email, false, 'Todavía no hay ningún local creado.');
+            return;
+        }
+        let lastId = null;
+        try { lastId = localStorage.getItem(lastLocalKey(user.uid)); } catch (_) {}
+        currentLocalId = availableLocals.some(l => l.id === lastId) ? lastId : availableLocals[0].id;
+    } else {
+        currentLocalId = data.localId || null;
+        if (!currentLocalId) {
+            showLoading(false);
+            showNoLocalScreen(user.email, false);
+            return;
+        }
     }
 
     applyProfileToHeader();
-    renderAll();
+    renderLocalBar();
+    subscribeToLocal(currentLocalId);
     showLoading(false);
 
     // Si todavía no eligió cómo llamarse, se lo pedimos antes de empezar.
@@ -77,29 +118,95 @@ async function handleSignedIn(user) {
 
     if (userDocUnsubscribe) userDocUnsubscribe();
     userDocUnsubscribe = ref.onSnapshot(doc => {
-        if (suppressNextSnapshot) { suppressNextSnapshot = false; return; }
         if (!doc.exists) return;
-        const data = doc.data() || {};
-        const remote = data.entries || [];
-        if (data.profile && JSON.stringify(data.profile) !== JSON.stringify(userProfile)) {
-            userProfile = data.profile;
+        const d = doc.data() || {};
+        if (d.profile && JSON.stringify(d.profile) !== JSON.stringify(userProfile)) {
+            userProfile = d.profile;
             saveLocalProfile();
             applyProfileToHeader();
         }
-        if (JSON.stringify(remote) !== JSON.stringify(overtimeData)) {
-            overtimeData = remote;
-            renderAll();
-        }
-    }, err => console.error('[HORAX] Error escuchando cambios:', err));
+    }, err => console.error('[HORAX] Error escuchando cambios de perfil:', err));
+}
+
+// Cuenta logueada pero sin ningún local asignado todavía (falta que la cargues en Firebase)
+function showNoLocalScreen(email, isConnError, customMsg) {
+    const card = document.querySelector('#loginScreen .login-card');
+    if (!card) return;
+    const msg = customMsg ||
+        (isConnError
+            ? 'No se pudo conectar para revisar tu acceso. Probá de nuevo en un momento.'
+            : `Tu cuenta (${email || ''}) todavía no fue asignada a ningún local. Pedile a quien administra HORAX que te habilite el acceso.`);
+    card.innerHTML = `
+        <div class="logo"><i class="fas fa-store-slash"></i></div>
+        <h1>HORAX</h1>
+        <p>${msg}</p>
+        <button id="noLocalLogoutBtn" class="btn-google"><i class="fas fa-sign-out-alt"></i> Cerrar sesión</button>`;
+    document.getElementById('noLocalLogoutBtn').addEventListener('click', () => auth.signOut());
+    showLoginScreen(true);
+}
+
+// Se suscribe a los datos de un local puntual (reemplaza la suscripción anterior si había una)
+function subscribeToLocal(localId) {
+    if (localDocUnsubscribe) { localDocUnsubscribe(); localDocUnsubscribe = null; }
+    currentLocalId = localId;
+    if (currentUser) {
+        try { localStorage.setItem(lastLocalKey(currentUser.uid), localId); } catch (_) {}
+    }
+    localDocUnsubscribe = localDocRef(localId).onSnapshot(doc => {
+        if (suppressNextSnapshot) { suppressNextSnapshot = false; return; }
+        const remote = (doc.exists && doc.data().entries) || [];
+        overtimeData = remote;
+        employeeColorsCache.clear();
+        renderAll();
+    }, err => {
+        console.error('[HORAX] Error escuchando el local:', err);
+        showToast('No se pudo conectar a la nube, revisá tu conexión');
+    });
+}
+
+// El admin elige otro local desde el desplegable
+function switchLocal(localId) {
+    if (!localId || localId === currentLocalId) return;
+    selectedDate = null;
+    subscribeToLocal(localId);
+    renderLocalBar();
+}
+
+// Barra con el selector de local: solo se ve si el rol es admin
+function renderLocalBar() {
+    let bar = document.getElementById('localBar');
+    if (currentRole !== 'admin') {
+        if (bar) bar.remove();
+        return;
+    }
+    if (!bar) {
+        bar = document.createElement('div');
+        bar.id = 'localBar';
+        bar.className = 'local-bar';
+        const header = document.querySelector('.app-header');
+        if (header) header.insertAdjacentElement('afterend', bar);
+    }
+    const options = availableLocals
+        .map(l => `<option value="${l.id}" ${l.id === currentLocalId ? 'selected' : ''}>${l.name}</option>`)
+        .join('');
+    bar.innerHTML = `<i class="fas fa-store"></i>
+        <select id="localSelector" aria-label="Elegir local">${options}</select>`;
+    document.getElementById('localSelector').addEventListener('change', e => switchLocal(e.target.value));
 }
 
 function handleSignedOut() {
     currentUser = null;
     userProfile = null;
+    currentRole = null;
+    currentLocalId = null;
+    availableLocals = [];
     applyProfileToHeader();
     closeProfileModal(true);
     overtimeData = [];
     if (userDocUnsubscribe) { userDocUnsubscribe(); userDocUnsubscribe = null; }
+    if (localDocUnsubscribe) { localDocUnsubscribe(); localDocUnsubscribe = null; }
+    const bar = document.getElementById('localBar');
+    if (bar) bar.remove();
     const logoutBtn = document.getElementById('logoutBtn');
     if (logoutBtn) logoutBtn.style.display = 'none';
     showLoading(false);
@@ -373,32 +480,24 @@ let selectedDate = null;
 let currentTab = 'tabCalendar';
 let pdfParsedData = null;
 
-function loadData() {
-    try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        if (raw) {
-            const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed)) { overtimeData = parsed; return true; }
-        }
-    } catch (_) {}
-    return false;
-}
 function saveData() {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(overtimeData)); } catch (_) {}
-    if (currentUser) {
-        suppressNextSnapshot = true;
-        userDocRef(currentUser.uid)
-            .set({ entries: overtimeData, email: currentUser.email || null }, { merge: true })
-            .catch(err => {
-                console.error('[HORAX] Error guardando en la nube:', err);
-                showToast('No se pudo guardar en la nube (sin conexión)');
-            });
-    }
+    if (!currentLocalId) return;
+    suppressNextSnapshot = true;
+    localDocRef(currentLocalId)
+        .set({ entries: overtimeData }, { merge: true })
+        .catch(err => {
+            console.error('[HORAX] Error guardando en la nube:', err);
+            showToast('No se pudo guardar en la nube (sin conexión)');
+        });
     updateBadges();
 }
+function currentLocalName() {
+    const found = availableLocals.find(l => l.id === currentLocalId);
+    return found ? found.name : (currentLocalId || 'este local');
+}
 function clearAllData() {
-    if (!confirm('¿Borrar TODAS las extras? Esta acción no se puede deshacer.')) return;
-    localStorage.removeItem(STORAGE_KEY);
+    if (!currentLocalId) return;
+    if (!confirm(`¿Borrar TODAS las extras de ${currentLocalName()}? Esta acción no se puede deshacer.`)) return;
     overtimeData = [];
     employeeColorsCache.clear();
     saveData(); renderAll(); showToast('Datos eliminados');
