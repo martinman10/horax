@@ -392,3 +392,59 @@
     padding: 8px 10px; font: inherit; font-size: 14px; font-weight: 600;
     color: var(--text); background: var(--bg, #fff); cursor: pointer;
 }
+
+/* ============================================================
+   VISTA DE COMPUTADORA (pantallas anchas)
+   Todo lo de arriba queda igual para celular. A partir de acá,
+   en vez de detectar "es celular o es compu", reaccionamos al
+   ancho disponible: si hay lugar, se reordena solo — funciona
+   igual si alguien agranda o achica la ventana del navegador.
+   ============================================================ */
+@media (min-width: 900px) {
+    html, body { overflow: auto; }
+
+    #app {
+        display: grid;
+        grid-template-columns: 240px 1fr;
+        grid-template-rows: var(--header-height) auto 1fr;
+        grid-template-areas:
+            "header header"
+            "nav     local"
+            "nav     main";
+        max-width: none; width: 100%; height: 100vh;
+        margin: 0; border-radius: 0; box-shadow: none;
+    }
+    .app-header { grid-area: header; padding: 12px 32px; }
+    .app-header .logo h1 { max-width: 320px; }
+
+    /* La barra de tabs pasa de estar abajo a ser un menú lateral fijo */
+    .tab-bar {
+        grid-area: nav; flex-direction: column; align-items: stretch;
+        justify-content: flex-start; gap: 4px; min-height: auto;
+        padding: 20px 12px; border-top: none; border-right: 1px solid var(--border);
+        box-shadow: none;
+    }
+    .tab-bar .tab-btn {
+        flex-direction: row; justify-content: flex-start; gap: 12px;
+        padding: 11px 14px; border-radius: var(--radius-sm); font-size: 14px; font-weight: 600;
+    }
+    .tab-bar .tab-btn:hover { background: var(--primary-bg); }
+    .tab-bar .tab-btn.active { background: var(--primary-bg); }
+    .tab-bar .tab-btn i { font-size: 18px; }
+    .tab-bar .tab-btn.active i { transform: none; }
+    .tab-bar .tab-btn .tab-badge {
+        position: static; transform: none; margin-left: auto; border: none;
+    }
+
+    #localBar { grid-area: local; margin: 0; border-bottom: 1px solid var(--border); }
+
+    .main-content { grid-area: main; padding: 28px 40px; }
+
+    /* Calendario: mes y detalle del día lado a lado */
+    #tabCalendar { display: grid; grid-template-columns: 1.3fr 1fr; column-gap: 28px; }
+    #tabCalendar > .month-nav, #tabCalendar > #todayBarCal { grid-column: 1 / -1; }
+    #tabCalendar .day-detail { margin-top: 0; }
+
+    /* El resto de las pestañas, más angostas y centradas para que se lean cómodo */
+    #tabSummary, #tabAdd, #tabPdf { max-width: 640px; margin: 0 auto; }
+}
