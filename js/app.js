@@ -237,6 +237,25 @@ const NAME_STOPWORDS = new Set([
     'ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO'
 ]);
 
+// Fecha de hoy según Montevideo (usa el reloj del celular, funciona sin internet)
+function hoyMVD() {
+    try {
+        const parts = new Intl.DateTimeFormat('en-CA', {
+            timeZone: 'America/Montevideo', year: 'numeric', month: '2-digit', day: '2-digit'
+        }).formatToParts(new Date());
+        const get = t => Number(parts.find(p => p.type === t).value);
+        return { year: get('year'), month: get('month') - 1, day: get('day') };
+    } catch (_) {
+        const d = new Date();
+        return { year: d.getFullYear(), month: d.getMonth(), day: d.getDate() };
+    }
+}
+// "hoy" como Date local (mismo día/mes/año que en Montevideo)
+function hoyDate() {
+    const h = hoyMVD();
+    return new Date(h.year, h.month, h.day);
+}
+
 function formatDate(d) {
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -277,8 +296,8 @@ const SCHEDULE_START_HOUR = 5;
 const SCHEDULE_END_HOUR = 23;
 
 let overtimeData = [];
-let currentMonth = new Date().getMonth();
-let currentYear = new Date().getFullYear();
+let currentMonth = hoyMVD().month;
+let currentYear = hoyMVD().year;
 let selectedDate = null;
 let currentTab = 'tabCalendar';
 let pdfParsedData = null;
@@ -392,7 +411,7 @@ function renderCalendar() {
     const firstDay = new Date(currentYear, currentMonth, 1).getDay();
     const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
     const daysInPrev = new Date(currentYear, currentMonth, 0).getDate();
-    const todayStr = formatDate(new Date());
+    const todayStr = formatDate(hoyDate());
     const datesWithOT = getDatesWithOvertime(currentYear, currentMonth);
 
     let html = '';
@@ -675,16 +694,17 @@ function renderAll() {
     const datalist = document.getElementById('personList');
     if (datalist) datalist.innerHTML = getPeople().map(p => `<option value="${p}">`).join('');
     updateBadges();
+    renderUndoImport();
 }
 
 let toastTimeout = null;
-function showToast(msg) {
+function showToast(msg, ms = 2400) {
     const el = document.getElementById('toast');
     if (!el) return;
     el.textContent = msg;
     el.classList.add('show');
     clearTimeout(toastTimeout);
-    toastTimeout = setTimeout(() => el.classList.remove('show'), 2400);
+    toastTimeout = setTimeout(() => el.classList.remove('show'), ms);
 }
 
 function switchTab(tabId) {
@@ -977,7 +997,7 @@ function detectMonthFromTexts(textItems) {
             if (s.includes(name)) return name;
         }
     }
-    return 'septiembre';
+    return null; // sin nombre de mes en el archivo: quien llama usa el mes de hoy
 }
 
 async function renderPageToImageData(page, scale) {
@@ -1481,10 +1501,10 @@ async function parsePdfFile(file) {
             const pdf = await pdfjsLib.getDocument({ data: e.target.result }).promise;
             const allEntries = [];
             let lastGlobalDay = 0;
-            let globalMonth = 8;
+            let globalMonth = hoyMVD().month;
             // el año sale del nombre del archivo (ej. HORARIOS_2026_-_SEPTIEMBRE...); si no lo trae, el año actual
             const yearInName = String((file && file.name) || '').match(/20\d{2}/);
-            let globalYear = yearInName ? parseInt(yearInName[0], 10) : new Date().getFullYear();
+            let globalYear = yearInName ? parseInt(yearInName[0], 10) : hoyMVD().year;
 
             for (let p = 1; p <= pdf.numPages; p++) {
                 dbg.pages++;
@@ -1510,7 +1530,7 @@ async function parsePdfFile(file) {
                 const rendered = await renderPageToImageData(page, SCALE);
 
                 const detectedMonthName = detectMonthFromTexts(items);
-                const baseMonth = MONTH_MAP[detectedMonthName] ?? 8;
+                const baseMonth = MONTH_MAP[detectedMonthName] ?? hoyMVD().month;
 
                 const monthState = { lastGlobalDay, globalMonth, globalYear };
                 const result = extractEntriesFromSource(
@@ -1804,7 +1824,7 @@ async function parseImageFiles(files) {
     errorBox.style.color = '#EF4444';
     if (dropZone) dropZone.classList.add('processing');
 
-    const monthState = { lastGlobalDay: 0, globalMonth: 8, globalYear: new Date().getFullYear() };
+    const monthState = { lastGlobalDay: 0, globalMonth: hoyMVD().month, globalYear: hoyMVD().year };
     const allEntries = [];
     const dbgTotal = { images: 0, weekGroups: 0, cols: 0, rows: 0, cells: 0, grayCells: 0, syntheticRows: false, calibratedRows: false, recoveredCells: 0, grayCellsRetried: 0 };
 
@@ -1999,6 +2019,42 @@ function showPdfPreview(entries) {
     document.getElementById('pdfImportBtn').disabled = entries.length === 0;
 }
 
+// ---- Deshacer la última importación ----
+function getLastImportInfo() {
+    const ids = overtimeData.map(e => e.importId).filter(Boolean);
+    if (ids.length === 0) return null;
+    const id = Math.max(...ids);
+    return { id, count: overtimeData.filter(e => e.importId === id).length };
+}
+function renderUndoImport() {
+    const zone = document.getElementById('pdfDropZone');
+    if (!zone) return;
+    let box = document.getElementById('undoImportBox');
+    if (!box) {
+        box = document.createElement('div');
+        box.id = 'undoImportBox';
+        box.className = 'undo-import';
+        zone.insertAdjacentElement('afterend', box);
+    }
+    const info = getLastImportInfo();
+    if (!info) { box.style.display = 'none'; box.innerHTML = ''; return; }
+    const when = new Date(info.id).toLocaleString('es-UY', {
+        timeZone: 'America/Montevideo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+    });
+    box.style.display = 'flex';
+    box.innerHTML = `<div><strong>Última importación</strong><small>${info.count} ${info.count === 1 ? 'extra' : 'extras'} · ${when}</small></div>
+        <button id="undoImportBtn"><i class="fas fa-rotate-left"></i> Deshacer</button>`;
+    document.getElementById('undoImportBtn').addEventListener('click', undoLastImport);
+}
+function undoLastImport() {
+    const info = getLastImportInfo();
+    if (!info) return;
+    if (!confirm(`¿Deshacer la última importación? Se van a borrar ${info.count} ${info.count === 1 ? 'extra' : 'extras'}.`)) return;
+    overtimeData = overtimeData.filter(e => e.importId !== info.id);
+    saveData(); renderAll();
+    showToast('Importación deshecha');
+}
+
 let lastImportAt = 0;
 function importPdfData() {
     if (!pdfParsedData || pdfParsedData.length === 0) {
@@ -2013,14 +2069,15 @@ function importPdfData() {
     const fresh = pdfParsedData.filter(item => !existing.has(keyOf(item)));
     const skipped = pdfParsedData.length - fresh.length;
     let maxId = overtimeData.reduce((m, e) => Math.max(m, e.id), 0);
+    const importId = Date.now(); // marca para poder deshacer esta importación
     const newEntries = fresh.map(item => ({
         id: ++maxId, date: item.date, start: item.start,
-        end: item.end, person: item.person, done: false
+        end: item.end, person: item.person, done: false, importId
     }));
     overtimeData = overtimeData.concat(newEntries);
     saveData();
     renderAll();
-    showToast(`Importadas ${newEntries.length} extras` + (skipped ? ` (${skipped} ya estaban)` : ''));
+    showToast(`Importadas ${newEntries.length} extras` + (skipped ? ` (${skipped} ya estaban)` : '') + (newEntries.length ? ' · podés deshacer en Importar' : ''), newEntries.length ? 4500 : 2400);
     document.getElementById('pdfPreview').style.display = 'none';
     pdfParsedData = null;
 
@@ -2033,7 +2090,7 @@ function importPdfData() {
 }
 
 function init() {
-    const today = new Date();
+    const today = hoyDate();
     currentMonth = today.getMonth();
     currentYear = today.getFullYear();
     selectedDate = formatDate(today);

@@ -347,3 +347,10 @@
 .sd-check.checked { background: #10B981; border-color: #10B981; }
 .sd-edit { width: 28px; height: 28px; color: var(--text-light); font-size: 13px; }
 .sd-edit:active { color: var(--primary); }
+
+/* Deshacer última importación */
+.undo-import { display: none; align-items: center; justify-content: space-between; gap: 12px; background: var(--card); border-radius: var(--radius-sm); box-shadow: var(--shadow-sm); padding: 12px 14px; margin-top: 12px; }
+.undo-import strong { display: block; font-size: 14px; }
+.undo-import small { font-size: 12px; color: var(--text-secondary); }
+.undo-import button { border: none; cursor: pointer; background: #FEF3C7; color: #92400E; font-weight: 600; font-family: inherit; font-size: 14px; padding: 10px 14px; border-radius: var(--radius-sm); }
+.undo-import button:active { transform: scale(.96); }
