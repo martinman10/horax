@@ -548,23 +548,9 @@ function shiftSummary(delta) {
     renderSummary();
 }
 
-// Estado del Resumen: quién está desplegado y las filas actuales
+// Personas desplegadas en el Resumen
 const expandedPeople = new Set();
 let summaryRows = [];
-
-function copyText(text) {
-    const ok = () => showToast('Detalle copiado');
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(ok).catch(() => fallbackCopy(text, ok));
-    } else fallbackCopy(text, ok);
-}
-function fallbackCopy(text, done) {
-    const ta = document.createElement('textarea');
-    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
-    document.body.appendChild(ta); ta.select();
-    try { document.execCommand('copy'); done(); } catch (e) { showToast('No se pudo copiar'); }
-    ta.remove();
-}
 
 function renderSummary() {
     summaryRows = [];
@@ -591,95 +577,66 @@ function renderSummary() {
         const byPerson = new Map();
         for (const e of entries) {
             const p = byPerson.get(e.person) || { person: e.person, total: 0, done: 0, items: [] };
+            p.items.push(e);
             const h = entryHours(e);
             p.total += h;
             if (e.done) p.done += h;
-            p.items.push(e);
             byPerson.set(e.person, p);
         }
         const summary = Array.from(byPerson.values())
             .sort((a, b) => b.total - a.total || a.person.localeCompare(b.person, 'es'));
 
         summaryRows = summary;
-        let sumTotal = 0, sumDone = 0;
-        for (const row of summary) { sumTotal += row.total; sumDone += row.done; }
-
-        html += `<div class="sum-hero">
-            <div class="sum-hero-main"><b>${fmtHours(sumTotal)}</b><small>horas extras en total</small></div>
-            <div class="sum-hero-side">
-                <span><i class="fas fa-users"></i> ${summary.length} ${summary.length === 1 ? 'persona' : 'personas'}</span>
-                <span><i class="fas fa-circle-check"></i> ${fmtHours(sumDone)} h hechas</span>
-                <span><i class="fas fa-clock"></i> ${fmtHours(sumTotal - sumDone)} h pendientes</span>
-            </div>
-        </div>
-        <p class="sum-tip"><i class="fas fa-hand-pointer"></i> Tocá a cada persona para ver el detalle</p>`;
-
         const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
-        summary.forEach((row, idx) => {
+        let sumTotal = 0, sumDone = 0;
+        html += `<div class="summary-table"><table><thead><tr>
+            <th>Persona</th><th>Horas</th><th>Hechas</th><th>Pendientes</th>
+        </tr></thead><tbody>`;
+        for (const row of summary) {
+            sumTotal += row.total; sumDone += row.done;
             const color = getEmployeeColor(row.person);
+            const idx = summary.indexOf(row);
             const open = expandedPeople.has(row.person);
-            const pct = row.total > 0 ? Math.round(row.done / row.total * 100) : 0;
+            html += `<tr class="sum-row ${open ? 'open' : ''}" data-idx="${idx}">
+                <td class="person-name" style="color:${color};"><i class="fas fa-chevron-right sum-arrow"></i>${row.person}</td>
+                <td>${fmtHours(row.total)}</td>
+                <td><span class="badge badge-done">${fmtHours(row.done)}</span></td>
+                <td><span class="badge badge-pending">${fmtHours(row.total - row.done)}</span></td>
+            </tr>`;
             const items = [...row.items].sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start));
-            const initial = (row.person.trim().charAt(0) || '?').toUpperCase();
-            html += `<div class="person-card ${open ? 'open' : ''}" data-idx="${idx}">
-                <button class="person-card-head" data-idx="${idx}" aria-expanded="${open}">
-                    <span class="pc-avatar" style="background:${color};">${initial}</span>
-                    <span class="pc-main">
-                        <span class="pc-name">${row.person}</span>
-                        <span class="pc-sub">${items.length} ${items.length === 1 ? 'extra' : 'extras'} · ${fmtHours(row.done)} h hechas</span>
-                    </span>
-                    <span class="pc-total"><b>${fmtHours(row.total)}</b><small>horas</small></span>
-                    <i class="fas fa-chevron-down pc-arrow"></i>
-                </button>
-                <div class="pc-bar"><span style="width:${pct}%;background:${color};"></span></div>
-                <div class="pc-body"><div class="pc-body-inner">`;
+            html += `<tr class="sum-detail ${open ? 'open' : ''}" data-idx="${idx}"><td colspan="4"><div class="sum-detail-list">`;
             for (const e of items) {
                 const day = Number(e.date.slice(8, 10));
                 const mon = MESES[Number(e.date.slice(5, 7)) - 1];
                 const wd = getDayName(e.date).slice(0, 3);
-                html += `<div class="pc-row ${e.done ? 'done' : ''}">
-                    <span class="pc-date"><b>${day}</b><small>${wd} · ${mon}</small></span>
-                    <span class="pc-time">${e.start} – ${e.end}</span>
-                    <span class="pc-h">${fmtHours(entryHours(e))} h</span>
-                    <i class="fas ${e.done ? 'fa-circle-check' : 'fa-clock'} pc-status" title="${e.done ? 'Hecha' : 'Pendiente'}"></i>
+                html += `<div class="sum-detail-item ${e.done ? 'done' : ''}">
+                    <span class="sd-date"><b>${day}</b> ${wd} · ${mon}</span>
+                    <span class="sd-time">${e.start} – ${e.end}</span>
+                    <span class="sd-h">${fmtHours(entryHours(e))} h</span>
+                    <i class="fas ${e.done ? 'fa-circle-check' : 'fa-clock'} sd-status"></i>
                 </div>`;
             }
-            html += `<div class="pc-foot">
-                        <div><small>Total a pagar</small><b>${fmtHours(row.total)} h</b></div>
-                        <button class="pc-copy" data-idx="${idx}"><i class="fas fa-copy"></i> Copiar</button>
-                    </div>
-                </div></div>
-            </div>`;
-        });
+            html += `</div></td></tr>`;
+        }
+        html += `<tr style="font-weight:700;">
+                <td>Total</td>
+                <td>${fmtHours(sumTotal)}</td>
+                <td>${fmtHours(sumDone)}</td>
+                <td>${fmtHours(sumTotal - sumDone)}</td>
+            </tr>`;
+        html += `</tbody></table></div>`;
     }
     container.innerHTML = html;
 
-    // Abrir / cerrar el detalle de cada persona
-    container.querySelectorAll('.person-card-head').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const card = btn.closest('.person-card');
-            const name = summaryRows[Number(btn.dataset.idx)].person;
-            const isOpen = card.classList.toggle('open');
-            btn.setAttribute('aria-expanded', String(isOpen));
+    // Tocar una persona para ver / ocultar su detalle
+    container.querySelectorAll('.sum-row').forEach(tr => {
+        tr.addEventListener('click', () => {
+            const idx = tr.dataset.idx;
+            const name = summaryRows[Number(idx)].person;
+            const detail = container.querySelector(`.sum-detail[data-idx="${idx}"]`);
+            const isOpen = tr.classList.toggle('open');
+            if (detail) detail.classList.toggle('open', isOpen);
             if (isOpen) expandedPeople.add(name); else expandedPeople.delete(name);
-        });
-    });
-    // Copiar el detalle de una persona (para pasarlo a quien paga)
-    container.querySelectorAll('.pc-copy').forEach(btn => {
-        btn.addEventListener('click', ev => {
-            ev.stopPropagation();
-            const row = summaryRows[Number(btn.dataset.idx)];
-            const items = [...row.items].sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start));
-            const lines = [
-                `${row.person} · ${monthName.charAt(0).toUpperCase() + monthName.slice(1)} ${currentYear}`,
-                `(del ${fmtDay(range.startDate)} al ${fmtDay(range.endDate)})`,
-                ''
-            ];
-            for (const e of items) {
-                lines.push(`${e.date.slice(8, 10)}/${e.date.slice(5, 7)}  ${e.start}-${e.end}  ${fmtHours(entryHours(e))} h`);
-            }
-            lines.push('', `TOTAL: ${fmtHours(row.total)} h`);
-            copyText(lines.join('\n'));
         });
     });
 
