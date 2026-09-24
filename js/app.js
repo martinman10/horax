@@ -373,7 +373,6 @@ function saveProfileFromModal() {
     showToast(`Listo, ${firstName}`);
 
     if (currentUser) {
-        suppressNextSnapshot = true;
         userDocRef(currentUser.uid)
             .set({ profile: userProfile, email: currentUser.email || null }, { merge: true })
             .catch(err => {
