@@ -477,7 +477,7 @@ function renderCalendar() {
     const monthLabel = document.getElementById('monthLabel');
     const monthName = new Date(currentYear, currentMonth)
         .toLocaleDateString('es-ES', { month: 'long' });
-    monthLabel.innerHTML = `${monthName.charAt(0).toUpperCase()+monthName.slice(1)} <small>${currentYear}</small>`;
+    monthLabel.innerHTML = `${monthName.charAt(0).toUpperCase()+monthName.slice(1)} <small>${currentYear}</small>${todayPillHtml()}`;
 
     const firstDay = new Date(currentYear, currentMonth, 1).getDay();
     const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
@@ -638,6 +638,25 @@ function shiftSummary(delta) {
     renderSummary();
 }
 
+// Volver directo al mes actual (según Montevideo), sin importar cuánto te hayas alejado
+function isCurrentMonthShown() {
+    const h = hoyMVD();
+    return currentYear === h.year && currentMonth === h.month;
+}
+// Botoncito "Hoy": solo aparece cuando NO estás en el mes actual
+function todayPillHtml() {
+    return isCurrentMonthShown() ? '' :
+        ' <span class="today-pill" role="button" tabindex="0" title="Volver al mes actual">Hoy</span>';
+}
+function goToToday() {
+    const h = hoyMVD();
+    currentYear = h.year;
+    currentMonth = h.month;
+    selectedDate = formatDate(hoyDate());
+    renderCalendar();
+    renderSummary();
+}
+
 // Personas desplegadas en el Resumen
 const expandedPeople = new Set();
 let summaryRows = [];
@@ -653,7 +672,7 @@ function renderSummary() {
     let html = `
         <div class="month-nav">
             <button id="summaryPrev"><i class="fas fa-chevron-left"></i></button>
-            <span class="month-label">${monthName.charAt(0).toUpperCase() + monthName.slice(1)} <small>${currentYear}</small></span>
+            <span class="month-label">${monthName.charAt(0).toUpperCase() + monthName.slice(1)} <small>${currentYear}</small>${todayPillHtml()}</span>
             <button id="summaryNext"><i class="fas fa-chevron-right"></i></button>
         </div>
         <p style="text-align:center;font-size:12px;color:var(--text-light);margin:0 0 12px;">
@@ -2224,6 +2243,14 @@ function init() {
     document.getElementById('nextMonth').addEventListener('click', () => {
         currentMonth++; if (currentMonth > 11) { currentMonth = 0; currentYear++; }
         selectedDate = null; renderCalendar(); renderSummary();
+    });
+    document.addEventListener('click', ev => {
+        if (ev.target.closest && ev.target.closest('.today-pill')) goToToday();
+    });
+    document.addEventListener('keydown', ev => {
+        if ((ev.key === 'Enter' || ev.key === ' ') && ev.target.classList && ev.target.classList.contains('today-pill')) {
+            ev.preventDefault(); goToToday();
+        }
     });
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.addEventListener('click', () => {

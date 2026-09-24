@@ -369,3 +369,10 @@
 }
 .theme-swatch:active { transform: scale(0.9); }
 .theme-swatch.sel { border-color: var(--text); box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--text); }
+/* Botón "Hoy": vuelve al mes actual (solo se ve si estás en otro mes) */
+.month-nav .today-pill {
+    display: inline-block; margin-left: 6px; padding: 3px 10px; border-radius: 999px;
+    background: var(--primary); color: var(--on-primary); font-size: 12px; font-weight: 700;
+    cursor: pointer; vertical-align: middle; user-select: none; -webkit-tap-highlight-color: transparent;
+}
+.month-nav .today-pill:active { transform: scale(0.92); }
