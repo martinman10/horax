@@ -326,7 +326,7 @@ function saveData() {
     updateBadges();
 }
 function clearAllData() {
-    if (!confirm('¿Borrar TODOS los datos guardados?')) return;
+    if (!confirm('¿Borrar TODAS las extras? Esta acción no se puede deshacer.')) return;
     localStorage.removeItem(STORAGE_KEY);
     overtimeData = [];
     employeeColorsCache.clear();
@@ -2113,7 +2113,9 @@ function init() {
         });
     });
     const logoutBtn = document.getElementById('logoutBtn');
-    if (logoutBtn) logoutBtn.addEventListener('click', () => auth.signOut());
+    if (logoutBtn) logoutBtn.addEventListener('click', () => {
+        if (confirm('¿Querés cerrar sesión?')) auth.signOut();
+    });
 
     const profileChip = document.getElementById('profileChip');
     if (profileChip) {
@@ -2169,13 +2171,6 @@ function init() {
         document.getElementById('addPerson').value = '';
         selectedDate = date;
         switchTab('tabCalendar');
-    });
-    document.getElementById('resetBtn').addEventListener('click', () => {
-        if (confirm('¿Borrar todos los datos actuales?')) {
-            overtimeData = [];
-            employeeColorsCache.clear();
-            saveData(); renderAll(); showToast('Datos borrados');
-        }
     });
     document.getElementById('clearBtn').addEventListener('click', clearAllData);
 
