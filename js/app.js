@@ -1161,10 +1161,15 @@ function findDayHeaders(words, maxGap) {
 //     PDF es 1; en una foto depende de la resolución y el tamaño de letra)
 //   - baseMonth / monthState: para reconocer a qué mes pertenece cada columna
 // ============================================================
-function extractEntriesFromSource(rawItems, imageData, colorScale, geomScale, baseMonth, monthState, fixedTextHeight, synthesizeRowsIfMissing, colorTolerance) {
+function extractEntriesFromSource(rawItems, imageData, colorScale, geomScale, baseMonth, monthState, fixedTextHeight, synthesizeRowsIfMissing, colorTolerance, detectMissingGrayCells) {
     const dbg = { weekGroups: 0, cols: 0, rows: 0, cells: 0, grayCells: 0, syntheticRows: false, calibratedRows: false };
     const entries = [];
     const zones = []; // solo se usa si DEBUG === true, para dibujar el overlay
+    // ★ NUEVO (solo fotos): celdas de la grilla cuyo FONDO es gris (=hora
+    // extra) pero a las que ningún nombre quedó asociado en esta pasada de
+    // OCR. Se llenan más abajo, barriendo la grilla por color en vez de por
+    // texto — así no dependen de que el OCR haya encontrado la palabra.
+    const missingGrayCells = [];
 
     const words = mergeTextFragments(rawItems, geomScale);
     const dayHeaders = findDayHeaders(words, 25 * geomScale);
@@ -1331,6 +1336,8 @@ function extractEntriesFromSource(rawItems, imageData, colorScale, geomScale, ba
             rowRanges.push({ start: r.start, end: r.end, labelY: r.y, top, bottom });
         }
 
+        const matchedInGroup = new Set(); // "fecha|horaInicio" ya cubiertos por un nombre leído
+
         for (const w of words) {
             if (isHeaderOrLabel(w.str)) continue;
             if (w.y < noteTopY || w.y > weekBottomY) continue;
@@ -1376,11 +1383,38 @@ function extractEntriesFromSource(rawItems, imageData, colorScale, geomScale, ba
             dbg.grayCells++;
 
             const dateStr = formatDate(new Date(col.year, col.month, col.day));
+            matchedInGroup.add(`${dateStr}|${row.start}`);
             entries.push({ date: dateStr, start: row.start, end: row.end, person: name, done: false });
+        }
+
+        // ★ NUEVO: segundo barrido de la MISMA grilla, esta vez por COLOR de
+        // celda entera (no por palabra encontrada). Cualquier celda gris que
+        // haya quedado sin nombre asociado es sospechosa de ser una hora extra
+        // que el OCR no pudo leer (letra chica/bajo contraste) — se guarda
+        // para intentar releerla puntualmente con zoom (solo aplica a fotos).
+        if (detectMissingGrayCells && colRanges.length && rowRanges.length) {
+            const colW = colRanges[0].right - colRanges[0].left;
+            const marginX = Math.max(1, colW * 0.1);
+            for (const col of colRanges) {
+                const dateStr = formatDate(new Date(col.year, col.month, col.day));
+                for (const row of rowRanges) {
+                    if (matchedInGroup.has(`${dateStr}|${row.start}`)) continue;
+                    const rowH = row.bottom - row.top;
+                    const left = col.left + marginX, right = col.right - marginX;
+                    const top = row.top + rowH * 0.08, bottom = row.bottom - rowH * 0.08;
+                    if (right - left < 4 || bottom - top < 4) continue;
+                    const colorInfo = sampleTextBackground(
+                        imageData, left * colorScale, top * colorScale,
+                        (right - left) * colorScale, (bottom - top) * colorScale, colorTolerance
+                    );
+                    if (!colorInfo || !colorInfo.isGray) continue;
+                    missingGrayCells.push({ left, right, top, bottom, date: dateStr, start: row.start, end: row.end });
+                }
+            }
         }
     }
 
-    return { entries, dbg, zones };
+    return { entries, dbg, zones, missingGrayCells };
 }
 
 // ============================================================
@@ -1639,6 +1673,71 @@ function mergeOcrWordSets(primary, secondary) {
     return out;
 }
 
+// ============================================================
+//  ★ NUEVO: RELECTURA DIRIGIDA DE CELDAS GRISES SIN NOMBRE (SOLO FOTOS)
+//  En vez de agrandar TODA la foto (lento, y a veces ni así alcanza para
+//  que el OCR general la lea bien), esto aprovecha que extractEntriesFromSource
+//  ya barrió la grilla por COLOR y encontró celdas grises (=hora extra) sin
+//  nombre asociado: para cada una de esas pocas celdas puntuales, se recorta
+//  esa zona de la foto, se agranda fuerte SOLO ese recorte chiquito, se le
+//  sube el contraste, y se relee con OCR en modo "una sola línea" (mucho más
+//  preciso para un recorte chico con un solo nombre que el modo automático
+//  que usa la pasada general sobre toda la foto).
+// ============================================================
+async function ocrCropForName(worker, sourceCanvas, rect) {
+    const pad = Math.max(2, Math.round((rect.bottom - rect.top) * 0.2));
+    const x0 = Math.max(0, Math.floor(rect.left - pad));
+    const y0 = Math.max(0, Math.floor(rect.top - pad));
+    const x1 = Math.min(sourceCanvas.width, Math.ceil(rect.right + pad));
+    const y1 = Math.min(sourceCanvas.height, Math.ceil(rect.bottom + pad));
+    const cw = x1 - x0, ch = y1 - y0;
+    if (cw < 4 || ch < 4) return null;
+
+    // agranda el recorte para que la letra quede grande y nítida
+    const targetH = 220;
+    const scale = Math.min(10, Math.max(2, targetH / ch));
+    const outW = Math.round(cw * scale), outH = Math.round(ch * scale);
+
+    const upCanvas = document.createElement('canvas');
+    upCanvas.width = outW; upCanvas.height = outH;
+    const upCtx = upCanvas.getContext('2d');
+    upCtx.imageSmoothingEnabled = true;
+    upCtx.imageSmoothingQuality = 'high';
+    upCtx.drawImage(sourceCanvas, x0, y0, cw, ch, 0, 0, outW, outH);
+
+    let ocrTarget = upCanvas;
+    try {
+        ocrTarget = adaptiveBinarizeForOcr(upCanvas, Math.max(15, Math.round(outH / 5)));
+    } catch (_) { /* si falla el binarizado, se intenta igual con el recorte agrandado a color */ }
+
+    try {
+        const { data } = await worker.recognize(ocrTarget, {}, { text: true });
+        return extractPersonName((data && data.text) || '');
+    } catch (_) {
+        return null;
+    }
+}
+
+async function retryMissingGrayCells(worker, canvas, missingCells) {
+    if (!missingCells || missingCells.length === 0) return [];
+    const MAX_RETRIES = 60; // límite de seguridad para no tardar de más si algo salió raro
+    const cells = missingCells.slice(0, MAX_RETRIES);
+    const recovered = [];
+    let psmChanged = false;
+    try {
+        await worker.setParameters({ tessedit_pageseg_mode: '7' }); // 1 sola línea de texto
+        psmChanged = true;
+    } catch (_) {}
+    for (const cell of cells) {
+        const name = await ocrCropForName(worker, canvas, cell);
+        if (name) recovered.push({ date: cell.date, start: cell.start, end: cell.end, person: name, done: false });
+    }
+    if (psmChanged) {
+        try { await worker.setParameters({ tessedit_pageseg_mode: '3' }); } catch (_) {} // vuelve al modo automático para la próxima foto
+    }
+    return recovered;
+}
+
 async function parseImageFiles(files) {
     if (!files || files.length === 0) return;
     if (typeof Tesseract === 'undefined') {
@@ -1656,7 +1755,7 @@ async function parseImageFiles(files) {
 
     const monthState = { lastGlobalDay: 0, globalMonth: 8, globalYear: new Date().getFullYear() };
     const allEntries = [];
-    const dbgTotal = { images: 0, weekGroups: 0, cols: 0, rows: 0, cells: 0, grayCells: 0, syntheticRows: false, calibratedRows: false };
+    const dbgTotal = { images: 0, weekGroups: 0, cols: 0, rows: 0, cells: 0, grayCells: 0, syntheticRows: false, calibratedRows: false, recoveredCells: 0, grayCellsRetried: 0 };
 
     try {
         const worker = await getOcrWorker();
@@ -1703,7 +1802,8 @@ async function parseImageFiles(files) {
 
             const result = extractEntriesFromSource(
                 items, imageData, /* colorScale */ 1, geomScale, baseMonth, monthState, /* fixedTextHeight */ null,
-                /* synthesizeRowsIfMissing */ true, /* colorTolerance */ IMAGE_COLOR_TOLERANCE
+                /* synthesizeRowsIfMissing */ true, /* colorTolerance */ IMAGE_COLOR_TOLERANCE,
+                /* detectMissingGrayCells */ true
             );
             allEntries.push(...result.entries);
             dbgTotal.weekGroups += result.dbg.weekGroups;
@@ -1713,6 +1813,22 @@ async function parseImageFiles(files) {
             dbgTotal.grayCells += result.dbg.grayCells;
             if (result.dbg.syntheticRows) dbgTotal.syntheticRows = true;
             if (result.dbg.calibratedRows) dbgTotal.calibratedRows = true;
+
+            // ★ NUEVO: celdas grises detectadas por color pero sin nombre leído
+            // todavía — releerlas puntualmente con zoom antes de seguir con la
+            // próxima foto (ver ocrCropForName / retryMissingGrayCells más arriba).
+            if (result.missingGrayCells && result.missingGrayCells.length > 0) {
+                try {
+                    const recovered = await retryMissingGrayCells(worker, canvas, result.missingGrayCells);
+                    if (recovered.length > 0) {
+                        allEntries.push(...recovered);
+                        dbgTotal.recoveredCells = (dbgTotal.recoveredCells || 0) + recovered.length;
+                    }
+                    dbgTotal.grayCellsRetried = (dbgTotal.grayCellsRetried || 0) + result.missingGrayCells.length;
+                } catch (errRetry) {
+                    console.warn('[HORAX] Relectura dirigida de celdas grises falló:', errRetry);
+                }
+            }
         }
 
         const merged = mergeConsecutive(allEntries);
@@ -1722,9 +1838,22 @@ async function parseImageFiles(files) {
         showPdfPreview(merged);
         console.log('[HORAX] Debug foto:', dbgTotal, '→', merged.length, 'extras');
 
+        // ★ NUEVO: si hubo celdas grises sin nombre que necesitaron la
+        // relectura con zoom, se arma un aviso aparte con cuántas se
+        // pudieron recuperar así y cuántas siguen sin leerse ni con zoom
+        // (esas sí conviene revisarlas/cargarlas a mano). Se combina con
+        // el resto de los avisos de abajo, si hay, para no pisarlos.
+        let zoomNote = '';
+        if (dbgTotal.grayCellsRetried > 0) {
+            const stillMissing = dbgTotal.grayCellsRetried - dbgTotal.recoveredCells;
+            zoomNote = stillMissing > 0
+                ? `Había ${dbgTotal.grayCellsRetried} celda(s) gris(es) con letra chica/bajo contraste: se pudieron recuperar ${dbgTotal.recoveredCells} haciendo zoom, pero ${stillMissing} siguen sin leerse — convendría revisarlas o cargarlas a mano. `
+                : `Había ${dbgTotal.grayCellsRetried} celda(s) gris(es) con letra chica/bajo contraste; se recuperaron las ${dbgTotal.recoveredCells} haciendo zoom sobre esa zona. `;
+        }
+
         if (merged.length === 0) {
             errorBox.style.display = 'block';
-            errorBox.textContent = `No se detectaron extras en la foto. Probá con más luz, sin inclinar la cámara, y que el texto se lea nítido. ` +
+            errorBox.textContent = zoomNote + `No se detectaron extras en la foto. Probá con más luz, sin inclinar la cámara, y que el texto se lea nítido. ` +
                 `Debug: ${dbgTotal.weekGroups} semanas, ${dbgTotal.cols} columnas, ${dbgTotal.rows} filas, ${dbgTotal.cells} celdas con nombre, ${dbgTotal.grayCells} reconocidas como extra.`;
             showToast('No se detectaron extras');
         } else if (dbgTotal.syntheticRows) {
@@ -1733,7 +1862,7 @@ async function parseImageFiles(files) {
             // Los horarios de abajo son una grilla pareja estimada, no lo que dice la foto.
             errorBox.style.display = 'block';
             errorBox.style.color = '#B45309';
-            errorBox.textContent = 'Ojo: esta foto no traía la columna de horarios a la izquierda ni horas sueltas junto a los nombres para calcularlas, así que los horarios que ves abajo son estimados (repartidos parejo de 5:00 a 23:00), no leídos de la foto. Revisalos antes de importar, o mejor sacá de nuevo la foto incluyendo esa columna.';
+            errorBox.textContent = zoomNote + 'Ojo: esta foto no traía la columna de horarios a la izquierda ni horas sueltas junto a los nombres para calcularlas, así que los horarios que ves abajo son estimados (repartidos parejo de 5:00 a 23:00), no leídos de la foto. Revisalos antes de importar, o mejor sacá de nuevo la foto incluyendo esa columna.';
             showToast(`${merged.length} extras con horarios estimados — revisá antes de importar`);
         } else if (dbgTotal.calibratedRows) {
             // la foto no traía la columna de horarios, pero sí había horas sueltas
@@ -1742,8 +1871,13 @@ async function parseImageFiles(files) {
             // reparto parejo, pero igual vale avisar que no vino la columna original.
             errorBox.style.display = 'block';
             errorBox.style.color = '#2563EB';
-            errorBox.textContent = 'Esta foto no traía la columna de horarios a la izquierda, pero se calcularon los horarios a partir de las horas que aparecen pegadas a algunos nombres (ej. 14:15, 22:15). Deberían ser bastante confiables, pero revisalos igual antes de importar.';
+            errorBox.textContent = zoomNote + 'Esta foto no traía la columna de horarios a la izquierda, pero se calcularon los horarios a partir de las horas que aparecen pegadas a algunos nombres (ej. 14:15, 22:15). Deberían ser bastante confiables, pero revisalos igual antes de importar.';
             showToast(`${merged.length} extras — horarios calculados a partir de la foto`);
+        } else if (zoomNote) {
+            errorBox.style.display = 'block';
+            errorBox.style.color = '#2563EB';
+            errorBox.textContent = zoomNote;
+            showToast(`${merged.length} extras importadas`);
         }
     } catch (err) {
         console.error('[HORAX] Error OCR:', err);
