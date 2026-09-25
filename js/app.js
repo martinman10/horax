@@ -368,8 +368,7 @@ const THEME_COLORS = [
     { hex: '#F01D79', name: 'Fucsia' },
     { hex: '#FEC3E1', name: 'Rosa' },
     { hex: '#DAC2FE', name: 'Lila' },
-    { hex: '#4CE5CF', name: 'Turquesa' },
-    { hex: '#320016', name: 'Vino' }
+    { hex: '#4CE5CF', name: 'Turquesa' }
 ];
 const THEME_KEY = 'horax_theme';
 function hexToRgb(h) { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
