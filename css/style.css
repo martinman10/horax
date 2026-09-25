@@ -476,14 +476,13 @@
         grid-area: main; padding: 32px 40px 40px;
         max-width: 1100px; margin: 0 auto; width: 100%;
     }
-    #tabSummary, #tabAdd, #tabPdf { max-width: 680px; margin: 0 auto; }
 
-    /* --- Calendario: se deja de ver como una tarjeta de celu para
-       leerse como una agenda de pared — mes grande y suelto arriba,
-       número del día arriba a la izquierda de cada casillero, y el
-       detalle del día como una ficha fija al costado que no se
-       mueve al hacer scroll de la grilla. --- */
-    #tabCalendar {
+    /* Especificidad: .tab-content{display:none} y .tab-content.active{display:block}
+       son reglas por clase; #tabCalendar es un ID y le gana a las dos SIEMPRE,
+       esté activa la pestaña o no — por eso Calendario quedaba visible aunque
+       estuvieras parado en Resumen. Pidiendo también la clase .active en el
+       selector, el cambio de pestaña (que ya maneja app.js) vuelve a mandar. */
+    #tabCalendar.active {
         display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
         column-gap: 32px; align-items: start;
     }
@@ -533,8 +532,32 @@
         overflow-y: auto;
     }
     #tabCalendar .day-detail::-webkit-scrollbar { width: 0; }
-
     .ot-item:hover { box-shadow: var(--shadow-sm); }
+
+    /* --- Resumen: la misma pestaña, pero pensada para que la tabla
+       respire y las columnas de números se lean como una cuenta,
+       no como una lista. --- */
+    #tabSummary { max-width: 760px; margin: 0 auto; }
+    #tabSummary > h2 { font-size: 15px !important; color: var(--text-secondary); font-weight: 600; }
+    .summary-table { padding: 22px 26px; }
+    .summary-table table { font-size: 14.5px; }
+    .summary-table th, .summary-table td { padding: 12px 10px; }
+    .summary-table th:not(:first-child), .summary-table td:not(:first-child) { text-align: right; }
     .summary-table .sum-row:hover { background: var(--primary-bg); }
+    .sum-detail-item { font-size: 13.5px; }
+
+    /* --- Agregar: una ficha angosta y centrada, como un formulario
+       de verdad, no una tarjeta de celu estirada. --- */
+    #tabAdd { max-width: 440px; margin: 40px auto 0; }
+    .add-form { padding: 34px 32px; }
+    .add-form h2 { font-size: 20px; }
+    .add-form .form-group input:hover, .add-form .form-group select:hover {
+        border-color: var(--primary-ink);
+    }
+
+    /* --- Importar: zona de arrastre más generosa, todo centrado. --- */
+    #tabPdf { max-width: 620px; margin: 0 auto; }
+    .pdf-zone { padding: 56px 24px; }
+    .pdf-zone i { font-size: 56px; }
     .pdf-zone:hover { border-color: var(--primary-ink); }
 }
