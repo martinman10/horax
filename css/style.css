@@ -395,17 +395,20 @@
 
 /* ============================================================
    VISTA DE COMPUTADORA (pantallas anchas)
-   Todo lo de arriba queda igual para celular. A partir de acá,
-   en vez de detectar "es celular o es compu", reaccionamos al
-   ancho disponible: si hay lugar, se reordena solo — funciona
-   igual si alguien agranda o achica la ventana del navegador.
+   Todo lo de arriba queda igual para celular: mismas clases,
+   mismos IDs, mismo HTML/JS. Esto es pura reacomodación visual
+   por ancho disponible — funciona igual si alguien agranda o
+   achica la ventana del navegador. La idea acá es que no se
+   sienta "el celu pero más ancho": la barra lateral pasa a
+   llevar el color del perfil (como una lomada/spine), y el mes
+   se lee grande y suelto en vez de ir metido en una píldora.
    ============================================================ */
 @media (min-width: 900px) {
     html, body { overflow: auto; }
 
     #app {
         display: grid;
-        grid-template-columns: 240px 1fr;
+        grid-template-columns: 92px 1fr;
         grid-template-rows: var(--header-height) auto 1fr;
         grid-template-areas:
             "header header"
@@ -414,37 +417,113 @@
         max-width: none; width: 100%; height: 100vh;
         margin: 0; border-radius: 0; box-shadow: none;
     }
-    .app-header { grid-area: header; padding: 12px 32px; }
+    .app-header {
+        grid-area: header; padding: 0 36px; border-bottom: 1px solid var(--border);
+        z-index: 20;
+    }
     .app-header .logo h1 { max-width: 320px; }
 
-    /* La barra de tabs pasa de estar abajo a ser un menú lateral fijo */
+    /* Riel lateral: en vez de un menú blanco con acento, es una franja
+       del color elegido en el perfil — la app "lleva puesto" su color
+       todo el tiempo, no solo en detalles sueltos. */
     .tab-bar {
-        grid-area: nav; flex-direction: column; align-items: stretch;
-        justify-content: flex-start; gap: 4px; min-height: auto;
-        padding: 20px 12px; border-top: none; border-right: 1px solid var(--border);
-        box-shadow: none;
+        grid-area: nav; flex-direction: column; align-items: center;
+        justify-content: flex-start; gap: 10px; min-height: auto;
+        padding: 22px 10px; border-top: none; border-right: none;
+        box-shadow: 2px 0 12px rgba(0,0,0,0.06);
+        background: var(--primary); position: relative; z-index: 15;
     }
     .tab-bar .tab-btn {
-        flex-direction: row; justify-content: flex-start; gap: 12px;
-        padding: 11px 14px; border-radius: var(--radius-sm); font-size: 14px; font-weight: 600;
+        flex-direction: column; justify-content: center; gap: 5px;
+        width: 100%; padding: 10px 4px 8px; border-radius: 14px;
+        font-size: 10px; font-weight: 600; color: var(--on-primary);
+        opacity: 0.68; letter-spacing: 0.2px;
     }
-    .tab-bar .tab-btn:hover { background: var(--primary-bg); }
-    .tab-bar .tab-btn.active { background: var(--primary-bg); }
-    .tab-bar .tab-btn i { font-size: 18px; }
+    .tab-bar .tab-btn:hover { opacity: 1; background: rgba(0,0,0,0.12); }
+    .tab-bar .tab-btn.active { opacity: 1; background: rgba(0,0,0,0.18); }
+    .tab-bar .tab-btn:focus-visible {
+        outline: 2px solid var(--on-primary); outline-offset: 2px;
+    }
+    .tab-bar .tab-btn i { font-size: 19px; }
     .tab-bar .tab-btn.active i { transform: none; }
     .tab-bar .tab-btn .tab-badge {
-        position: static; transform: none; margin-left: auto; border: none;
+        position: absolute; top: 4px; right: 14px; transform: none;
+        border: 2px solid var(--primary);
     }
 
-    #localBar { grid-area: local; margin: 0; border-bottom: 1px solid var(--border); }
+    #localBar {
+        grid-area: local; margin: 0; padding: 12px 36px;
+        border-bottom: 1px solid var(--border); background: var(--card);
+    }
+    #localBar select { background: var(--bg); }
 
-    .main-content { grid-area: main; padding: 28px 40px; }
+    .main-content { grid-area: main; padding: 32px 40px 40px; }
+    #tabSummary, #tabAdd, #tabPdf { max-width: 680px; margin: 0 auto; }
 
-    /* Calendario: mes y detalle del día lado a lado */
-    #tabCalendar { display: grid; grid-template-columns: 1.3fr 1fr; column-gap: 28px; }
+    /* --- Calendario: se deja de ver como una tarjeta de celu para
+       leerse como una agenda de pared — mes grande y suelto arriba,
+       número del día arriba a la izquierda de cada casillero, y el
+       detalle del día como una ficha fija al costado que no se
+       mueve al hacer scroll de la grilla. --- */
+    #tabCalendar {
+        display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(280px, 380px);
+        column-gap: 32px; align-items: start;
+    }
     #tabCalendar > .month-nav, #tabCalendar > #todayBarCal { grid-column: 1 / -1; }
-    #tabCalendar .day-detail { margin-top: 0; }
 
-    /* El resto de las pestañas, más angostas y centradas para que se lean cómodo */
-    #tabSummary, #tabAdd, #tabPdf { max-width: 640px; margin: 0 auto; }
+    .month-nav {
+        background: none; box-shadow: none; padding: 4px 0 18px;
+        border-bottom: 1px solid var(--border); margin-bottom: 20px;
+    }
+    .month-nav .month-label {
+        font-size: 34px; font-weight: 800; letter-spacing: -0.8px;
+    }
+    .month-nav .month-label small { font-size: 17px; }
+    .month-nav button {
+        width: 34px; height: 34px; background: none; color: var(--text-secondary);
+        border: 1.5px solid var(--border);
+    }
+    .month-nav button:hover { border-color: var(--primary-ink); color: var(--primary-ink); }
+
+    #todayBarCal { margin: -12px 0 20px; }
+    .today-bar {
+        width: auto; background: none; color: var(--text-secondary);
+        padding: 0; margin: 0; font-size: 12.5px; justify-content: flex-start;
+    }
+    .today-bar:hover { color: var(--primary-ink); }
+
+    .calendar-grid {
+        box-shadow: none; border: 1px solid var(--border); padding: 0;
+        gap: 1px; background: var(--border); overflow: hidden;
+    }
+    .calendar-grid .day-name {
+        background: var(--card); padding: 10px 0; font-size: 11px;
+    }
+    .calendar-grid .day-cell {
+        background: var(--card); aspect-ratio: 1 / 0.82; border-radius: 0;
+        align-items: flex-start; justify-content: flex-start;
+        padding: 8px 0 0 10px; font-size: 15px; font-variant-numeric: tabular-nums;
+    }
+    .calendar-grid .day-cell:hover { background: var(--primary-bg); }
+    .calendar-grid .day-cell:active { transform: none; }
+    .calendar-grid .day-cell.has-overtime::after {
+        left: auto; right: 9px; bottom: 8px; width: 7px; height: 7px;
+    }
+
+    #tabCalendar .day-detail {
+        margin-top: 0; position: sticky; top: 0; max-height: calc(100vh - var(--header-height) - 64px);
+        overflow-y: auto;
+    }
+    #tabCalendar .day-detail::-webkit-scrollbar { width: 0; }
+
+    .ot-item:hover { box-shadow: var(--shadow-sm); }
+    .summary-table .sum-row:hover { background: var(--primary-bg); }
+    .pdf-zone:hover { border-color: var(--primary-ink); }
+}
+
+/* En pantallas muy anchas, no dejamos que la grilla del calendario
+   se estire de más: mantiene el mismo diseño, solo pone un techo
+   de ancho y lo centra, para que los casilleros no queden gigantes. */
+@media (min-width: 1440px) {
+    .main-content { max-width: 1360px; margin: 0 auto; }
 }
