@@ -655,6 +655,12 @@ function getDayStatus(dateStr) {
     if (entries.length === 0) return 'none';
     return entries.every(e => e.done) ? 'done' : 'pending';
 }
+// Evita que un comentario con < > & rompa el HTML del listado del día
+function escapeHtml(str) {
+    return String(str)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
 function getPeople() {
     const set = new Set();
     for (const e of overtimeData) set.add(e.person);
@@ -668,15 +674,16 @@ function deleteEntry(id) {
     overtimeData = overtimeData.filter(e => e.id !== id);
     saveData(); renderAll(); showToast('Extra eliminada');
 }
-function addEntry(date, start, end, person) {
+function addEntry(date, start, end, person, comment) {
     const maxId = overtimeData.reduce((m, e) => Math.max(m, e.id), 0);
-    overtimeData.push({ id: maxId + 1, date, start, end, person: person.trim(), done: false });
+    overtimeData.push({ id: maxId + 1, date, start, end, person: person.trim(), done: false, comment: (comment || '').trim() });
     saveData(); renderAll(); showToast(`Extra agregada para ${person}`);
 }
-function editEntry(id, date, start, end, person) {
+function editEntry(id, date, start, end, person, comment) {
     const entry = overtimeData.find(e => e.id === id);
     if (!entry) return;
     entry.date = date; entry.start = start; entry.end = end; entry.person = person.trim();
+    entry.comment = (comment || '').trim();
     saveData(); renderAll(); showToast('Extra actualizada');
 }
 
@@ -689,6 +696,8 @@ function openEditModal(id) {
     document.getElementById('editStart').value = entry.start;
     document.getElementById('editEnd').value = entry.end;
     document.getElementById('editPerson').value = entry.person;
+    const editComment = document.getElementById('editComment');
+    if (editComment) editComment.value = entry.comment || '';
     document.getElementById('editModal').style.display = 'flex';
 }
 function closeEditModal() {
@@ -701,9 +710,11 @@ function saveEditFromModal() {
     const start = document.getElementById('editStart').value;
     const end = document.getElementById('editEnd').value;
     const person = document.getElementById('editPerson').value.trim();
+    const commentEl = document.getElementById('editComment');
+    const comment = commentEl ? commentEl.value.trim() : '';
     if (!date || !start || !end || !person) { showToast('Completá todos los campos'); return; }
     if (start >= end) { showToast('El inicio debe ser anterior al final'); return; }
-    editEntry(editingEntryId, date, start, end, person);
+    editEntry(editingEntryId, date, start, end, person, comment);
     selectedDate = date;
     closeEditModal();
 }
@@ -806,6 +817,7 @@ function renderDayDetail(dateStr) {
                 <div class="ot-info">
                     <div class="ot-person" style="color:${color};">${e.person}</div>
                     <div class="ot-time">${e.start} - ${e.end}</div>
+                    ${e.comment ? `<div class="ot-comment"><i class="fas fa-comment-dots"></i> ${escapeHtml(e.comment)}</div>` : ''}
                 </div>
                 <button class="ot-edit" data-id="${e.id}"><i class="fas fa-pen"></i></button>
                 <button class="ot-delete" data-id="${e.id}"><i class="fas fa-trash-alt"></i></button>
@@ -1058,6 +1070,12 @@ function switchTab(tabId) {
     currentTab = tabId;
     if (tabId === 'tabSummary') renderSummary();
     if (tabId === 'tabCalendar') renderCalendar();
+    if (tabId === 'tabAdd') {
+        // Si venís de un día elegido en el Calendario, "Agregar" arranca en ese
+        // día en vez de siempre en hoy.
+        const addDate = document.getElementById('addDate');
+        if (addDate) addDate.value = selectedDate || formatDate(hoyDate());
+    }
     const mc = document.getElementById('mainContent'); if (mc) mc.scrollTop = 0;
 }
 
@@ -2519,10 +2537,13 @@ function init() {
         const start = document.getElementById('addStart').value;
         const end = document.getElementById('addEnd').value;
         const person = document.getElementById('addPerson').value.trim();
+        const commentEl = document.getElementById('addComment');
+        const comment = commentEl ? commentEl.value.trim() : '';
         if (!date || !start || !end || !person) { showToast('Completá todos los campos'); return; }
         if (start >= end) { showToast('El inicio debe ser anterior al final'); return; }
-        addEntry(date, start, end, person);
+        addEntry(date, start, end, person, comment);
         document.getElementById('addPerson').value = '';
+        if (commentEl) commentEl.value = '';
         selectedDate = date;
         switchTab('tabCalendar');
     });

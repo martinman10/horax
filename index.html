@@ -126,6 +126,10 @@
                         <input type="text" id="addPerson" placeholder="Nombre" list="personList" />
                         <datalist id="personList"></datalist>
                     </div>
+                    <div class="form-group">
+                        <label>Comentario <span class="label-opt">(opcional)</span></label>
+                        <textarea id="addComment" rows="2" placeholder="Ej: cubrió turno de..."></textarea>
+                    </div>
                     <button class="btn-submit" id="addSubmitBtn">
                         <i class="fas fa-save"></i> Guardar extra
                     </button>
@@ -222,6 +226,10 @@
             <div class="form-group">
                 <label>Persona</label>
                 <input type="text" id="editPerson" placeholder="Nombre" list="personList" />
+            </div>
+            <div class="form-group">
+                <label>Comentario <span class="label-opt">(opcional)</span></label>
+                <textarea id="editComment" rows="2" placeholder="Ej: cubrió turno de..."></textarea>
             </div>
             <div class="modal-actions">
                 <button class="btn-secondary" id="editCancelBtn">Cancelar</button>
