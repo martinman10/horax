@@ -4,6 +4,10 @@
 const STORAGE_KEY = 'xtraspilar_v22'; // no cambiar: es la clave donde ya hay datos guardados en este dispositivo
 const DEBUG = false; // ← poné true solo si querés ver el overlay de depuración
 
+// Esta cuenta siempre entra como admin (ve todos los locales). Cualquier otra
+// cuenta que inicie sesión por primera vez se da de alta sola como "encargada".
+const ADMIN_EMAIL = 'martinmaneiro6@gmail.com';
+
 // ============================================================
 //  FIREBASE (login con Google + datos en la nube, separados por persona)
 // ============================================================
@@ -72,9 +76,9 @@ async function handleSignedIn(user) {
     }
 
     if (!data || !data.role) {
-        // Esta cuenta todavía no fue asignada a ningún local.
+        // Primera vez que esta cuenta inicia sesión: se da de alta sola.
         showLoading(false);
-        showNoLocalScreen(user.email, false);
+        showOnboardingScreen(user);
         return;
     }
 
@@ -142,6 +146,121 @@ function showNoLocalScreen(email, isConnError, customMsg) {
         <p>${msg}</p>
         <button id="noLocalLogoutBtn" class="btn-google"><i class="fas fa-sign-out-alt"></i> Cerrar sesión</button>`;
     document.getElementById('noLocalLogoutBtn').addEventListener('click', () => auth.signOut());
+    showLoginScreen(true);
+}
+
+// Cuenta que inicia sesión con Google por primera vez: le pedimos nombre
+// (y local, si no es la admin) y creamos su usuario en Firebase solos,
+// sin que nadie tenga que cargarla a mano.
+async function showOnboardingScreen(user) {
+    const card = document.querySelector('#loginScreen .login-card');
+    if (!card) return;
+    const isAdmin = (user.email || '').toLowerCase() === ADMIN_EMAIL.toLowerCase();
+
+    let locals = [];
+    if (!isAdmin) {
+        try {
+            const snap = await localsCollectionRef().get();
+            locals = snap.docs
+                .map(d => ({ id: d.id, name: (d.data() && d.data().name) || d.id }))
+                .sort((a, b) => a.name.localeCompare(b.name, 'es'));
+        } catch (err) {
+            console.error('[HORAX] Error cargando los locales:', err);
+            card.innerHTML = `
+                <div class="logo"><i class="fas fa-triangle-exclamation"></i></div>
+                <h1>HORAX</h1>
+                <p>No se pudo conectar para traer la lista de locales. Probá de nuevo en un momento.</p>
+                <button id="onbRetryBtn" class="btn-google"><i class="fas fa-rotate-right"></i> Reintentar</button>
+                <button id="onbLogoutBtn" class="btn-secondary" style="margin-top:10px;">Cerrar sesión</button>`;
+            document.getElementById('onbRetryBtn').addEventListener('click', () => showOnboardingScreen(user));
+            document.getElementById('onbLogoutBtn').addEventListener('click', () => auth.signOut());
+            showLoginScreen(true);
+            return;
+        }
+        if (locals.length === 0) {
+            card.innerHTML = `
+                <div class="logo"><i class="fas fa-store-slash"></i></div>
+                <h1>HORAX</h1>
+                <p>Todavía no hay ningún local creado. Pedile a quien administra HORAX que cree uno primero.</p>
+                <button id="onbLogoutBtn" class="btn-google"><i class="fas fa-sign-out-alt"></i> Cerrar sesión</button>`;
+            document.getElementById('onbLogoutBtn').addEventListener('click', () => auth.signOut());
+            showLoginScreen(true);
+            return;
+        }
+    }
+
+    // Proponemos el nombre de la cuenta de Google, editable.
+    const parts = (user.displayName || '').trim().split(/\s+/).filter(Boolean);
+    const guessFirst = (parts.shift() || '').replace(/"/g, '&quot;');
+    const guessLast = parts.join(' ').replace(/"/g, '&quot;');
+    const localOptions = locals.map(l => `<option value="${l.id}">${l.name}</option>`).join('');
+
+    card.innerHTML = `
+        <div class="logo"><i class="fas fa-user-check"></i></div>
+        <h1>HORAX</h1>
+        <p>${isAdmin
+            ? 'Bienvenido. Completá tu nombre para empezar.'
+            : 'Es tu primera vez acá. Contanos tu nombre y en qué local trabajás.'}</p>
+        <div class="form-group">
+            <label>Nombre</label>
+            <input type="text" id="onbFirstName" placeholder="Ej: Karla" value="${guessFirst}" />
+        </div>
+        <div class="form-group">
+            <label>Apellido <span class="label-opt">(opcional)</span></label>
+            <input type="text" id="onbLastName" placeholder="Ej: Pérez" value="${guessLast}" />
+        </div>
+        ${isAdmin ? '' : `
+        <div class="form-group">
+            <label>Local</label>
+            <select id="onbLocal">${localOptions}</select>
+        </div>`}
+        <p id="onbError" class="login-error" style="display:none;"></p>
+        <button id="onbSaveBtn" class="btn-submit"><i class="fas fa-check"></i> Empezar</button>
+        <button id="onbLogoutBtn" class="btn-secondary">Cerrar sesión</button>`;
+
+    document.getElementById('onbLogoutBtn').addEventListener('click', () => auth.signOut());
+    const saveBtn = document.getElementById('onbSaveBtn');
+    saveBtn.addEventListener('click', async () => {
+        const firstName = document.getElementById('onbFirstName').value.trim();
+        const lastName = document.getElementById('onbLastName').value.trim();
+        const errorEl = document.getElementById('onbError');
+        errorEl.style.display = 'none';
+        if (!firstName) {
+            errorEl.textContent = 'Escribí al menos tu nombre para continuar.';
+            errorEl.style.display = 'block';
+            return;
+        }
+        let localId = null;
+        if (!isAdmin) {
+            localId = document.getElementById('onbLocal').value;
+            if (!localId) {
+                errorEl.textContent = 'Elegí tu local para continuar.';
+                errorEl.style.display = 'block';
+                return;
+            }
+        }
+        const payload = {
+            email: user.email || null,
+            role: isAdmin ? 'admin' : 'encargada',
+            profile: { firstName, lastName, themeColor: THEME_DEFAULT }
+        };
+        if (!isAdmin) payload.localId = localId;
+
+        saveBtn.disabled = true;
+        showLoading(true);
+        try {
+            await userDocRef(user.uid).set(payload, { merge: true });
+            showLoading(false);
+            handleSignedIn(user); // recarga todo, ahora la cuenta ya tiene rol y local
+        } catch (err) {
+            console.error('[HORAX] Error dando de alta al usuario:', err);
+            showLoading(false);
+            saveBtn.disabled = false;
+            errorEl.textContent = 'No se pudo guardar, probá de nuevo.';
+            errorEl.style.display = 'block';
+        }
+    });
+
     showLoginScreen(true);
 }
 

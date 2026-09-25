@@ -317,6 +317,26 @@
         .btn-google i { color: #EA4335; font-size: 17px; }
         .btn-google:active { transform: scale(0.97); background: var(--bg); }
         .login-error { margin-top: 14px; font-size: 13px; color: #EF4444; }
+        .login-card .form-group { margin-bottom: 14px; text-align: left; }
+        .login-card .form-group label { display: block; font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 5px; }
+        .login-card .form-group input, .login-card .form-group select {
+            width: 100%; padding: 12px 14px; border: 1.5px solid var(--border);
+            border-radius: var(--radius-sm); font-size: 15px; font-family: inherit;
+            background: var(--bg); transition: 0.2s; color: var(--text);
+            -webkit-appearance: none; appearance: none;
+        }
+        .login-card .form-group input:focus, .login-card .form-group select:focus {
+            outline: none; border-color: var(--primary-ink); box-shadow: 0 0 0 3px rgba(var(--primary-rgb),0.15);
+        }
+        .login-card .btn-submit {
+            width: 100%; padding: 14px; background: var(--primary); color: var(--on-primary);
+            border: none; border-radius: var(--radius-sm); font-size: 16px; font-weight: 600;
+            font-family: inherit; cursor: pointer; transition: 0.2s;
+            display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 10px;
+        }
+        .login-card .btn-submit:active { transform: scale(0.97); background: var(--primary-dark); }
+        .login-card .btn-submit:disabled { opacity: 0.6; pointer-events: none; }
+        .login-card .btn-secondary { width: 100%; }
         .app-loading {
             position: fixed; inset: 0; background: var(--bg); display: flex;
             align-items: center; justify-content: center; z-index: 99;
