@@ -8,6 +8,14 @@ const DEBUG = false; // ← poné true solo si querés ver el overlay de depurac
 // cuenta que inicie sesión por primera vez se da de alta sola como "encargada".
 const ADMIN_EMAIL = 'martinmaneiro6@gmail.com';
 
+// Guardamos cómo es la tarjeta de login apenas arranca la página (con el botón
+// "Continuar con Google"), para poder devolverla a ese estado al cerrar sesión,
+// aunque haya quedado con el formulario de alta automática o el aviso de "sin local".
+const LOGIN_CARD_DEFAULT_HTML = (() => {
+    const el = document.querySelector('#loginScreen .login-card');
+    return el ? el.innerHTML : '';
+})();
+
 // ============================================================
 //  FIREBASE (login con Google + datos en la nube, separados por persona)
 // ============================================================
@@ -328,8 +336,19 @@ function handleSignedOut() {
     if (bar) bar.remove();
     const logoutBtn = document.getElementById('logoutBtn');
     if (logoutBtn) logoutBtn.style.display = 'none';
+    resetLoginCard();
     showLoading(false);
     showLoginScreen(true);
+}
+
+// Deja la tarjeta de login como al principio (por si había quedado con el
+// formulario de alta automática o el aviso de "sin local" de otra cuenta).
+function resetLoginCard() {
+    const card = document.querySelector('#loginScreen .login-card');
+    if (card && card.innerHTML !== LOGIN_CARD_DEFAULT_HTML) {
+        card.innerHTML = LOGIN_CARD_DEFAULT_HTML;
+        bindGoogleLoginButton();
+    }
 }
 
 // ============================================================
@@ -2413,16 +2432,13 @@ function importPdfData() {
     switchTab('tabCalendar');
 }
 
-function init() {
-    const today = hoyDate();
-    currentMonth = today.getMonth();
-    currentYear = today.getFullYear();
-    selectedDate = formatDate(today);
-    const addDate = document.getElementById('addDate');
-    if (addDate) addDate.value = formatDate(today);
-
+// Engancha el botón "Continuar con Google" de la tarjeta de login. Se llama
+// una vez al arrancar la app y de nuevo cada vez que resetLoginCard() recrea
+// el botón (porque quedó reemplazado por el formulario de alta automática).
+function bindGoogleLoginButton() {
     const googleBtn = document.getElementById('googleLoginBtn');
-    if (googleBtn) googleBtn.addEventListener('click', () => {
+    if (!googleBtn) return;
+    googleBtn.addEventListener('click', () => {
         const errorEl = document.getElementById('loginError');
         if (errorEl) errorEl.style.display = 'none';
         const provider = new firebase.auth.GoogleAuthProvider();
@@ -2436,6 +2452,17 @@ function init() {
             }
         });
     });
+}
+
+function init() {
+    const today = hoyDate();
+    currentMonth = today.getMonth();
+    currentYear = today.getFullYear();
+    selectedDate = formatDate(today);
+    const addDate = document.getElementById('addDate');
+    if (addDate) addDate.value = formatDate(today);
+
+    bindGoogleLoginButton();
     const logoutBtn = document.getElementById('logoutBtn');
     if (logoutBtn) logoutBtn.addEventListener('click', () => {
         if (confirm('¿Querés cerrar sesión?')) auth.signOut();
