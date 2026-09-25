@@ -177,6 +177,13 @@
             outline: none; border-color: var(--primary-ink); box-shadow: 0 0 0 3px rgba(var(--primary-rgb),0.15);
         }
         .add-form .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .btn-submit {
+            width: 100%; padding: 14px; background: var(--primary); color: var(--on-primary);
+            border: none; border-radius: var(--radius-sm); font-size: 16px; font-weight: 600;
+            font-family: inherit; cursor: pointer; transition: 0.2s;
+            display: flex; align-items: center; justify-content: center; gap: 10px;
+        }
+        .btn-submit:active { transform: scale(0.97); background: var(--primary-dark); }
         .add-form .btn-submit {
             width: 100%; padding: 14px; background: var(--primary); color: var(--on-primary);
             border: none; border-radius: var(--radius-sm); font-size: 16px; font-weight: 600;
@@ -296,6 +303,17 @@
         .modal-card .form-group input:focus, .modal-card .form-group select:focus, .modal-card .form-group textarea:focus {
             outline: none; border-color: var(--primary-ink); box-shadow: 0 0 0 3px rgba(var(--primary-rgb),0.15);
         }
+        .confirm-card { text-align: center; }
+        .confirm-card h2 { text-align: center; }
+        .confirm-card .modal-hint { text-align: center; margin: 0 0 20px; }
+        .confirm-icon {
+            width: 56px; height: 56px; border-radius: 16px; background: #FEF3C7; color: #B45309;
+            font-size: 24px; display: flex; align-items: center; justify-content: center;
+            margin: 0 auto 14px;
+        }
+        .confirm-icon.danger { background: #FEE2E2; color: #DC2626; }
+        .btn-submit.btn-danger { background: #EF4444; }
+        .btn-submit.btn-danger:active { background: #DC2626; }
         .label-opt { font-weight: 400; color: var(--text-light); }
         .modal-actions { display: flex; gap: 10px; margin-top: 4px; }
         .modal-actions .btn-submit { flex: 1.4; }

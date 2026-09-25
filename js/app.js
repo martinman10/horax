@@ -632,9 +632,16 @@ function currentLocalName() {
     const found = availableLocals.find(l => l.id === currentLocalId);
     return found ? found.name : (currentLocalId || 'este local');
 }
-function clearAllData() {
+async function clearAllData() {
     if (!currentLocalId) return;
-    if (!confirm(`¿Borrar TODAS las extras de ${currentLocalName()}? Esta acción no se puede deshacer.`)) return;
+    const ok = await showConfirm({
+        title: '¿Borrar todas las extras?',
+        message: `Se van a borrar TODAS las extras de ${currentLocalName()}. Esta acción no se puede deshacer.`,
+        okText: 'Borrar todo',
+        cancelText: 'Cancelar',
+        danger: true
+    });
+    if (!ok) return;
     overtimeData = [];
     employeeColorsCache.clear();
     saveData(); renderAll(); showToast('Datos eliminados');
@@ -838,10 +845,17 @@ function renderDayDetail(dateStr) {
         });
     });
     content.querySelectorAll('.ot-delete').forEach(el => {
-        el.addEventListener('click', ev => {
+        el.addEventListener('click', async ev => {
             ev.stopPropagation();
             const id = parseInt(el.dataset.id, 10);
-            if (confirm('¿Eliminar esta extra?')) deleteEntry(id);
+            const ok = await showConfirm({
+                title: '¿Eliminar esta extra?',
+                message: 'Esta acción no se puede deshacer.',
+                okText: 'Eliminar',
+                cancelText: 'Cancelar',
+                danger: true
+            });
+            if (ok) deleteEntry(id);
         });
     });
 }
@@ -1060,6 +1074,49 @@ function showToast(msg, ms = 2400) {
     el.classList.add('show');
     clearTimeout(toastTimeout);
     toastTimeout = setTimeout(() => el.classList.remove('show'), ms);
+}
+
+// ============================================================
+//  CONFIRMACIÓN "LINDA" (reemplaza los confirm() feos del navegador)
+// ============================================================
+// Uso: const ok = await showConfirm({ title, message, okText, cancelText, danger });
+function showConfirm({ title = '¿Estás seguro?', message = '', okText = 'Confirmar', cancelText = 'Cancelar', danger = false } = {}) {
+    return new Promise(resolve => {
+        const modal = document.getElementById('confirmModal');
+        if (!modal) { resolve(window.confirm(message || title)); return; }
+
+        document.getElementById('confirmTitle').textContent = title;
+        document.getElementById('confirmMessage').textContent = message;
+        const icon = document.getElementById('confirmIcon');
+        if (icon) {
+            icon.classList.toggle('danger', danger);
+            icon.innerHTML = danger ? '<i class="fas fa-trash-alt"></i>' : '<i class="fas fa-triangle-exclamation"></i>';
+        }
+        const okBtn = document.getElementById('confirmOkBtn');
+        const cancelBtn = document.getElementById('confirmCancelBtn');
+        okBtn.textContent = okText;
+        cancelBtn.textContent = cancelText;
+        okBtn.classList.toggle('btn-danger', danger);
+        modal.style.display = 'flex';
+
+        function cleanup(result) {
+            modal.style.display = 'none';
+            okBtn.removeEventListener('click', onOk);
+            cancelBtn.removeEventListener('click', onCancel);
+            modal.removeEventListener('click', onOverlay);
+            document.removeEventListener('keydown', onKey);
+            resolve(result);
+        }
+        function onOk() { cleanup(true); }
+        function onCancel() { cleanup(false); }
+        function onOverlay(ev) { if (ev.target.id === 'confirmModal') cleanup(false); }
+        function onKey(ev) { if (ev.key === 'Escape') cleanup(false); }
+
+        okBtn.addEventListener('click', onOk);
+        cancelBtn.addEventListener('click', onCancel);
+        modal.addEventListener('click', onOverlay);
+        document.addEventListener('keydown', onKey);
+    });
 }
 
 function switchTab(tabId) {
@@ -2407,10 +2464,17 @@ function renderUndoImport() {
         <button id="undoImportBtn"><i class="fas fa-rotate-left"></i> Deshacer</button>`;
     document.getElementById('undoImportBtn').addEventListener('click', undoLastImport);
 }
-function undoLastImport() {
+async function undoLastImport() {
     const info = getLastImportInfo();
     if (!info) return;
-    if (!confirm(`¿Deshacer la última importación? Se van a borrar ${info.count} ${info.count === 1 ? 'extra' : 'extras'}.`)) return;
+    const ok = await showConfirm({
+        title: '¿Deshacer la importación?',
+        message: `Se van a borrar ${info.count} ${info.count === 1 ? 'extra' : 'extras'}.`,
+        okText: 'Deshacer',
+        cancelText: 'Cancelar',
+        danger: true
+    });
+    if (!ok) return;
     overtimeData = overtimeData.filter(e => e.importId !== info.id);
     saveData(); renderAll();
     showToast('Importación deshecha');
@@ -2482,8 +2546,14 @@ function init() {
 
     bindGoogleLoginButton();
     const logoutBtn = document.getElementById('logoutBtn');
-    if (logoutBtn) logoutBtn.addEventListener('click', () => {
-        if (confirm('¿Querés cerrar sesión?')) auth.signOut();
+    if (logoutBtn) logoutBtn.addEventListener('click', async () => {
+        const ok = await showConfirm({
+            title: '¿Cerrar sesión?',
+            message: 'Vas a tener que volver a iniciar sesión con Google la próxima vez que abras HORAX.',
+            okText: 'Cerrar sesión',
+            cancelText: 'Cancelar'
+        });
+        if (ok) auth.signOut();
     });
 
     const profileChip = document.getElementById('profileChip');
