@@ -42,6 +42,9 @@ let suppressNextSnapshot = false; // evita re-renderizar por nuestro propio guar
 
 function userDocRef(uid) { return db.collection('users').doc(uid); }
 function localDocRef(id) { return db.collection('locals').doc(id); }
+// Historial de auditoría: subcolección aparte del documento del local (ver
+// comentario junto a logAudit() más abajo sobre por qué no es un array).
+function auditLogRef(id) { return localDocRef(id).collection('auditLog'); }
 function localsCollectionRef() { return db.collection('locals'); }
 
 // ---- Multi-local ----
@@ -628,6 +631,61 @@ function saveData() {
         });
     updateBadges();
 }
+// ============================================================
+//  HISTORIAL DE AUDITORÍA
+//  Quién agregó, editó o borró una extra, y cuándo.
+//
+//  Se guarda en locals/{localId}/auditLog/{autoId} — una SUBCOLECCIÓN,
+//  no un array paralelo dentro del documento del local. Motivo: `entries`
+//  ya vive como array en ese documento y cada guardado (saveData) reescribe
+//  el array completo; si el auditLog fuera otro array en el mismo doc,
+//  cada nuevo evento obligaría a reescribir TODO el historial acumulado,
+//  y ese documento (que tiene un límite de 1 MiB en Firestore) crecería
+//  para siempre con la actividad, sin forma de acotarlo. Como subcolección,
+//  cada evento es un documento chico e independiente: se agrega con `.add()`
+//  sin tocar `entries` ni el resto del historial, no hay límite de tamaño
+//  práctico, y se puede paginar/ordenar por fecha con una query normal.
+function auditActor() {
+    const name = profileDisplayName() || (currentUser && currentUser.displayName) || 'Alguien';
+    const email = (currentUser && currentUser.email) || '';
+    return { name, email };
+}
+// action: 'create' | 'update' | 'delete'. summary: texto legible para mostrar
+// en el historial. entryId: id de la extra afectada (o null para acciones
+// masivas como importar/deshacer/vaciar todo).
+function logAudit(action, summary, entryId) {
+    if (!currentLocalId) return;
+    const actor = auditActor();
+    auditLogRef(currentLocalId).add({
+        action,
+        summary,
+        entryId: entryId != null ? entryId : null,
+        byName: actor.name,
+        byEmail: actor.email,
+        at: firebase.firestore.FieldValue.serverTimestamp()
+    }).catch(err => console.error('[HORAX] Error guardando auditoría:', err));
+}
+function fmtDM(dateStr) {
+    const [, m, d] = dateStr.split('-');
+    return `${d}/${m}`;
+}
+function buildEditSummary(before, after) {
+    const parts = [];
+    const dateChanged = before.date !== after.date;
+    const timeChanged = before.start !== after.start || before.end !== after.end;
+    if (dateChanged || timeChanged) {
+        if (dateChanged) {
+            parts.push(`el horario de ${after.person} del ${fmtDM(before.date)} ${before.start}-${before.end} a ${fmtDM(after.date)} ${after.start}-${after.end}`);
+        } else {
+            parts.push(`el horario de ${after.person} del ${fmtDM(after.date)} de ${before.start}-${before.end} a ${after.start}-${after.end}`);
+        }
+    }
+    if (before.person !== after.person) parts.push(`la persona de ${before.person} a ${after.person}`);
+    if ((before.comment || '') !== (after.comment || '')) parts.push('el comentario');
+    if (parts.length === 0) return `Editó una extra de ${after.person} sin cambios de datos`;
+    return `Cambió ${parts.join(', ')}`;
+}
+
 function currentLocalName() {
     const found = availableLocals.find(l => l.id === currentLocalId);
     return found ? found.name : (currentLocalId || 'este local');
@@ -645,6 +703,7 @@ async function clearAllData() {
     overtimeData = [];
     employeeColorsCache.clear();
     saveData(); renderAll(); showToast('Datos eliminados');
+    logAudit('delete', 'Borró todas las extras del local', null);
 }
 
 function getEntriesForDate(dateStr) { return overtimeData.filter(e => e.date === dateStr); }
@@ -678,20 +737,28 @@ function toggleDone(id) {
     if (entry) { entry.done = !entry.done; saveData(); renderAll(); }
 }
 function deleteEntry(id) {
+    const entry = overtimeData.find(e => e.id === id);
     overtimeData = overtimeData.filter(e => e.id !== id);
     saveData(); renderAll(); showToast('Extra eliminada');
+    if (entry) {
+        logAudit('delete', `Eliminó la extra de ${entry.person} del ${fmtDM(entry.date)} (${entry.start}-${entry.end})`, id);
+    }
 }
 function addEntry(date, start, end, person, comment) {
     const maxId = overtimeData.reduce((m, e) => Math.max(m, e.id), 0);
-    overtimeData.push({ id: maxId + 1, date, start, end, person: person.trim(), done: false, comment: (comment || '').trim() });
+    const entry = { id: maxId + 1, date, start, end, person: person.trim(), done: false, comment: (comment || '').trim() };
+    overtimeData.push(entry);
     saveData(); renderAll(); showToast(`Extra agregada para ${person}`);
+    logAudit('create', `Agregó una extra para ${entry.person} el ${fmtDM(date)} de ${start} a ${end}`, entry.id);
 }
 function editEntry(id, date, start, end, person, comment) {
     const entry = overtimeData.find(e => e.id === id);
     if (!entry) return;
+    const before = { date: entry.date, start: entry.start, end: entry.end, person: entry.person, comment: entry.comment };
     entry.date = date; entry.start = start; entry.end = end; entry.person = person.trim();
     entry.comment = (comment || '').trim();
     saveData(); renderAll(); showToast('Extra actualizada');
+    logAudit('update', buildEditSummary(before, entry), id);
 }
 
 let editingEntryId = null;
@@ -1045,6 +1112,50 @@ function renderSummary() {
 
     document.getElementById('summaryPrev').addEventListener('click', () => shiftSummary(-1));
     document.getElementById('summaryNext').addEventListener('click', () => shiftSummary(1));
+}
+
+// ---- Ver historial de auditoría (solo lectura: no hay ningún botón de
+// editar/borrar en este modal, y la app nunca escribe en auditLog salvo
+// desde logAudit) ----
+const AUDIT_ICON = { create: 'fa-plus', update: 'fa-pen', delete: 'fa-trash-alt' };
+function openAuditModal() {
+    const modal = document.getElementById('auditModal');
+    if (!modal || !currentLocalId) return;
+    modal.style.display = 'flex';
+    const list = document.getElementById('auditList');
+    list.innerHTML = `<div class="empty-state"><i class="fas fa-circle-notch fa-spin"></i><p>Cargando historial...</p></div>`;
+    auditLogRef(currentLocalId).orderBy('at', 'desc').limit(200).get()
+        .then(snap => renderAuditList(snap.docs))
+        .catch(err => {
+            console.error('[HORAX] Error leyendo auditoría:', err);
+            list.innerHTML = `<div class="empty-state"><i class="fas fa-triangle-exclamation"></i><p>No se pudo cargar el historial</p></div>`;
+        });
+}
+function closeAuditModal() {
+    const modal = document.getElementById('auditModal');
+    if (modal) modal.style.display = 'none';
+}
+function renderAuditList(docs) {
+    const list = document.getElementById('auditList');
+    if (!list) return;
+    if (!docs || docs.length === 0) {
+        list.innerHTML = `<div class="empty-state"><i class="fas fa-clock-rotate-left"></i><p>Todavía no hay actividad registrada</p></div>`;
+        return;
+    }
+    list.innerHTML = docs.map(doc => {
+        const d = doc.data();
+        const icon = AUDIT_ICON[d.action] || 'fa-circle-info';
+        const when = (d.at && d.at.toDate) ? d.at.toDate().toLocaleString('es-UY', {
+            timeZone: 'America/Montevideo', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+        }) : 'justo ahora';
+        return `<div class="audit-item audit-${d.action}">
+            <div class="audit-icon"><i class="fas ${icon}"></i></div>
+            <div class="audit-body">
+                <p class="audit-summary">${escapeHtml(d.summary || '')}</p>
+                <p class="audit-meta">${escapeHtml(d.byName || d.byEmail || 'Alguien')} · ${when}</p>
+            </div>
+        </div>`;
+    }).join('');
 }
 
 function updateBadges() {
@@ -2478,6 +2589,7 @@ async function undoLastImport() {
     overtimeData = overtimeData.filter(e => e.importId !== info.id);
     saveData(); renderAll();
     showToast('Importación deshecha');
+    logAudit('delete', `Deshizo una importación de ${info.count} ${info.count === 1 ? 'extra' : 'extras'}`, null);
 }
 
 let lastImportAt = 0;
@@ -2503,6 +2615,9 @@ function importPdfData() {
     saveData();
     renderAll();
     showToast(`Importadas ${newEntries.length} extras` + (skipped ? ` (${skipped} ya estaban)` : '') + (newEntries.length ? ' · podés deshacer en Importar' : ''), newEntries.length ? 4500 : 2400);
+    if (newEntries.length > 0) {
+        logAudit('create', `Importó ${newEntries.length} ${newEntries.length === 1 ? 'extra' : 'extras'} desde PDF/foto`, null);
+    }
     document.getElementById('pdfPreview').style.display = 'none';
     pdfParsedData = null;
 
@@ -2618,6 +2733,12 @@ function init() {
         switchTab('tabCalendar');
     });
     document.getElementById('clearBtn').addEventListener('click', clearAllData);
+
+    document.getElementById('viewAuditBtn').addEventListener('click', openAuditModal);
+    document.getElementById('auditCloseBtn').addEventListener('click', closeAuditModal);
+    document.getElementById('auditModal').addEventListener('click', ev => {
+        if (ev.target.id === 'auditModal') closeAuditModal();
+    });
 
     const dropZone = document.getElementById('pdfDropZone');
     const fileInput = document.getElementById('pdfFileInput');
