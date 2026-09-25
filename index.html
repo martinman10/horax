@@ -156,6 +156,26 @@
                 </div>
                 <div id="pdfError" style="color:#EF4444;margin-top:12px;display:none;"></div>
             </div>
+
+            <!-- TAB ADMIN (solo visible para currentRole === 'admin') -->
+            <div class="tab-content" id="tabAdmin">
+                <h2 style="margin-bottom:16px;font-size:18px;">Administración</h2>
+
+                <h3 class="admin-subhead">Usuarios</h3>
+                <div id="adminUsersList" class="admin-users-list">
+                    <div class="empty-state"><i class="fas fa-circle-notch fa-spin"></i><p>Cargando...</p></div>
+                </div>
+
+                <h3 class="admin-subhead">Locales</h3>
+                <div id="adminLocalsList" class="admin-locals-list"></div>
+                <div class="admin-new-local">
+                    <input type="text" id="newLocalName" placeholder="Nombre del nuevo local" />
+                    <button class="btn-submit" id="createLocalBtn"><i class="fas fa-plus"></i> Crear</button>
+                </div>
+                <p style="font-size:12px;color:var(--text-light);margin-top:8px;">
+                    Un local solo se puede eliminar si no tiene extras cargadas.
+                </p>
+            </div>
         </div>
 
         <!-- BOTTOM TABS -->
@@ -176,6 +196,10 @@
             <button class="tab-btn" data-tab="tabPdf">
                 <i class="fas fa-file-import"></i>
                 <span>Importar</span>
+            </button>
+            <button class="tab-btn" data-tab="tabAdmin" id="adminTabBtn" style="display:none;">
+                <i class="fas fa-user-shield"></i>
+                <span>Admin</span>
             </button>
         </div>
 
@@ -248,6 +272,29 @@
             <div id="auditList" class="audit-list"></div>
             <div class="modal-actions">
                 <button class="btn-secondary" id="auditCloseBtn">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="editUserModal" class="modal-overlay" style="display:none;">
+        <div class="modal-card">
+            <h2><i class="fas fa-user-gear" style="color:var(--primary-ink);margin-right:8px;"></i>Editar acceso</h2>
+            <p class="modal-hint" id="editUserHint"></p>
+            <div class="form-group">
+                <label>Rol</label>
+                <select id="editUserRole">
+                    <option value="encargada">Encargada</option>
+                    <option value="admin">Admin</option>
+                </select>
+            </div>
+            <div class="form-group" id="editUserLocalGroup">
+                <label>Local asignado</label>
+                <select id="editUserLocal"></select>
+            </div>
+            <p id="editUserError" class="login-error" style="display:none;"></p>
+            <div class="modal-actions">
+                <button class="btn-secondary" id="editUserCancelBtn">Cancelar</button>
+                <button class="btn-submit" id="editUserSaveBtn"><i class="fas fa-save"></i> Guardar</button>
             </div>
         </div>
     </div>

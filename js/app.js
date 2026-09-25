@@ -125,6 +125,7 @@ async function handleSignedIn(user) {
 
     applyProfileToHeader();
     renderLocalBar();
+    updateAdminTabVisibility();
     subscribeToLocal(currentLocalId);
     showLoading(false);
 
@@ -324,12 +325,269 @@ function renderLocalBar() {
     document.getElementById('localSelector').addEventListener('change', e => switchLocal(e.target.value));
 }
 
+// ============================================================
+//  PANEL DE ADMINISTRACIÓN
+//  Solo lo ve currentRole === 'admin'. Permite ver/editar el rol y local de
+//  cada cuenta, y crear o borrar locales, sin entrar a la consola de Firebase.
+//  Editar el rol/local de OTRA cuenta y listar la colección users requieren
+//  reglas de Firestore nuevas (ver el mensaje aparte con las reglas).
+// ============================================================
+let adminUsers = [];          // cache de {uid, email, role, localId, profile} para el panel
+let adminUsersLoaded = false;
+const ROLE_LABEL = { admin: 'Admin', encargada: 'Encargada' };
+
+function updateAdminTabVisibility() {
+    const btn = document.getElementById('adminTabBtn');
+    if (!btn) return;
+    const show = currentRole === 'admin';
+    btn.style.display = show ? 'flex' : 'none';
+    if (!show && currentTab === 'tabAdmin') switchTab('tabCalendar');
+}
+
+function localNameById(id) {
+    const found = availableLocals.find(l => l.id === id);
+    return found ? found.name : (id || '—');
+}
+
+// tabAdmin se muestra: se llama cada vez que se entra a ese tab.
+function renderAdminPanel() {
+    if (currentRole !== 'admin') return;
+    if (adminUsersLoaded) { renderAdminUsersList(); renderAdminLocalsList(); }
+    loadAdminUsers(); // igual refresca en segundo plano por si algo cambió
+}
+
+async function loadAdminUsers() {
+    const list = document.getElementById('adminUsersList');
+    if (!adminUsersLoaded && list) {
+        list.innerHTML = `<div class="empty-state"><i class="fas fa-circle-notch fa-spin"></i><p>Cargando usuarios...</p></div>`;
+    }
+    try {
+        const snap = await db.collection('users').get();
+        adminUsers = snap.docs.map(d => ({ uid: d.id, ...d.data() }));
+        adminUsersLoaded = true;
+    } catch (err) {
+        console.error('[HORAX] Error cargando usuarios:', err);
+        if (list && !adminUsers.length) {
+            list.innerHTML = `<div class="empty-state"><i class="fas fa-triangle-exclamation"></i><p>No se pudo cargar la lista de usuarios</p></div>`;
+        }
+        return;
+    }
+    renderAdminUsersList();
+    renderAdminLocalsList();
+}
+
+function renderAdminUsersList() {
+    const list = document.getElementById('adminUsersList');
+    if (!list) return;
+    if (adminUsers.length === 0) {
+        list.innerHTML = `<div class="empty-state"><i class="fas fa-user-slash"></i><p>No hay usuarios cargados todavía</p></div>`;
+        return;
+    }
+    const sorted = [...adminUsers].sort((a, b) => (a.email || '').localeCompare(b.email || '', 'es'));
+    list.innerHTML = sorted.map(u => {
+        const name = (u.profile && [u.profile.firstName, u.profile.lastName].filter(Boolean).join(' ').trim()) || '(sin nombre)';
+        const isSelf = currentUser && u.uid === currentUser.uid;
+        return `<div class="admin-user-card">
+            <div class="admin-user-info">
+                <p class="admin-user-name">${escapeHtml(name)}${isSelf ? ' <span class="admin-you-tag">(vos)</span>' : ''}</p>
+                <p class="admin-user-email">${escapeHtml(u.email || '—')}</p>
+                <div class="admin-user-badges">
+                    <span class="badge ${u.role === 'admin' ? 'badge-admin' : 'badge-encargada'}">${ROLE_LABEL[u.role] || u.role || '—'}</span>
+                    ${u.role === 'encargada' ? `<span class="badge badge-local">${escapeHtml(localNameById(u.localId))}</span>` : ''}
+                </div>
+            </div>
+            ${isSelf ? '' : `<button class="sd-btn sd-edit admin-edit-btn" data-uid="${u.uid}" title="Editar acceso"><i class="fas fa-pen"></i></button>`}
+        </div>`;
+    }).join('');
+    list.querySelectorAll('.admin-edit-btn').forEach(btn => {
+        btn.addEventListener('click', () => openEditUserModal(btn.dataset.uid));
+    });
+}
+
+function renderAdminLocalsList() {
+    const list = document.getElementById('adminLocalsList');
+    if (!list) return;
+    if (availableLocals.length === 0) {
+        list.innerHTML = `<div class="empty-state"><i class="fas fa-store-slash"></i><p>No hay locales creados</p></div>`;
+        return;
+    }
+    const sorted = [...availableLocals].sort((a, b) => a.name.localeCompare(b.name, 'es'));
+    list.innerHTML = sorted.map(l => `
+        <div class="admin-local-row">
+            <span class="admin-local-name"><i class="fas fa-store"></i> ${escapeHtml(l.name)}</span>
+            <button class="sd-btn sd-edit admin-delete-local-btn" data-id="${l.id}" data-name="${escapeHtml(l.name)}" title="Eliminar local"><i class="fas fa-trash-alt"></i></button>
+        </div>`).join('');
+    list.querySelectorAll('.admin-delete-local-btn').forEach(btn => {
+        btn.addEventListener('click', () => deleteLocalFromAdmin(btn.dataset.id, btn.dataset.name));
+    });
+}
+
+async function refreshAvailableLocals() {
+    try {
+        const snap = await localsCollectionRef().get();
+        availableLocals = snap.docs
+            .map(d => ({ id: d.id, name: (d.data() && d.data().name) || d.id }))
+            .sort((a, b) => a.name.localeCompare(b.name, 'es'));
+    } catch (err) {
+        console.error('[HORAX] Error actualizando la lista de locales:', err);
+    }
+}
+
+async function createNewLocalFromForm() {
+    const input = document.getElementById('newLocalName');
+    if (!input) return;
+    const name = input.value.trim();
+    if (!name) { showToast('Escribí un nombre para el local'); return; }
+    if (availableLocals.some(l => l.name.toLowerCase() === name.toLowerCase())) {
+        showToast('Ya existe un local con ese nombre'); return;
+    }
+    const btn = document.getElementById('createLocalBtn');
+    if (btn) btn.disabled = true;
+    try {
+        await localsCollectionRef().add({ name });
+        input.value = '';
+        await refreshAvailableLocals();
+        renderAdminLocalsList();
+        renderLocalBar();
+        showToast(`Local "${name}" creado`);
+    } catch (err) {
+        console.error('[HORAX] Error creando el local:', err);
+        showToast('No se pudo crear el local');
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+// Solo deja borrar un local si no tiene extras cargadas (chequeo en vivo,
+// no confiamos en datos viejos en caché). El historial de auditoría de ese
+// local, si tuviera, queda huérfano: hay que borrarlo a mano en la consola
+// de Firebase si hiciera falta, la app no puede borrar subcolecciones.
+async function deleteLocalFromAdmin(localId, name) {
+    let entriesCount = null;
+    try {
+        const snap = await localDocRef(localId).get();
+        const entries = (snap.exists && snap.data().entries) || [];
+        entriesCount = entries.length;
+    } catch (err) {
+        console.error('[HORAX] Error revisando el local antes de borrar:', err);
+        showToast('No se pudo revisar el local, probá de nuevo');
+        return;
+    }
+    if (entriesCount > 0) {
+        showToast(`"${name}" tiene ${entriesCount} extra${entriesCount === 1 ? '' : 's'} cargada${entriesCount === 1 ? '' : 's'}: vaciala antes de borrar el local`, 4200);
+        return;
+    }
+    const ok = await showConfirm({
+        title: '¿Eliminar este local?',
+        message: `Se va a eliminar "${name}". Esta acción no se puede deshacer, y cualquier encargada asignada a este local va a quedar sin local hasta que le asignes otro.`,
+        okText: 'Eliminar',
+        cancelText: 'Cancelar',
+        danger: true
+    });
+    if (!ok) return;
+    try {
+        await localDocRef(localId).delete();
+        await refreshAvailableLocals();
+        renderAdminLocalsList();
+        renderLocalBar();
+        showToast(`Local "${name}" eliminado`);
+    } catch (err) {
+        console.error('[HORAX] Error eliminando el local:', err);
+        showToast('No se pudo eliminar el local');
+    }
+}
+
+// ---- Editar el rol / local de una cuenta (con confirmación) ----
+let editingUserUid = null;
+function openEditUserModal(uid) {
+    const u = adminUsers.find(x => x.uid === uid);
+    if (!u) return;
+    editingUserUid = uid;
+    const modal = document.getElementById('editUserModal');
+    const hint = document.getElementById('editUserHint');
+    const roleSel = document.getElementById('editUserRole');
+    const localSel = document.getElementById('editUserLocal');
+    const errorEl = document.getElementById('editUserError');
+    if (!modal || !hint || !roleSel || !localSel || !errorEl) return;
+    errorEl.style.display = 'none';
+
+    const name = (u.profile && [u.profile.firstName, u.profile.lastName].filter(Boolean).join(' ').trim()) || u.email || 'esta cuenta';
+    hint.textContent = `Vas a cambiar el acceso de ${name} (${u.email || 'sin mail'}).`;
+
+    roleSel.value = u.role === 'admin' ? 'admin' : 'encargada';
+    const localsSorted = [...availableLocals].sort((a, b) => a.name.localeCompare(b.name, 'es'));
+    localSel.innerHTML = localsSorted.map(l => `<option value="${l.id}">${escapeHtml(l.name)}</option>`).join('');
+    localSel.value = availableLocals.some(l => l.id === u.localId) ? u.localId : ((localsSorted[0] && localsSorted[0].id) || '');
+    updateEditUserLocalVisibility();
+
+    modal.style.display = 'flex';
+}
+function updateEditUserLocalVisibility() {
+    const roleSel = document.getElementById('editUserRole');
+    const group = document.getElementById('editUserLocalGroup');
+    if (!roleSel || !group) return;
+    group.style.display = roleSel.value === 'encargada' ? 'block' : 'none';
+}
+function closeEditUserModal() {
+    editingUserUid = null;
+    const modal = document.getElementById('editUserModal');
+    if (modal) modal.style.display = 'none';
+}
+async function saveEditUserFromModal() {
+    if (!editingUserUid) return;
+    const u = adminUsers.find(x => x.uid === editingUserUid);
+    if (!u) return;
+    const roleSel = document.getElementById('editUserRole');
+    const localSel = document.getElementById('editUserLocal');
+    const errorEl = document.getElementById('editUserError');
+    errorEl.style.display = 'none';
+
+    const newRole = roleSel.value;
+    const newLocalId = newRole === 'encargada' ? localSel.value : null;
+    if (newRole === 'encargada' && !newLocalId) {
+        errorEl.textContent = 'Elegí un local para esta cuenta.';
+        errorEl.style.display = 'block';
+        return;
+    }
+    const name = (u.profile && [u.profile.firstName, u.profile.lastName].filter(Boolean).join(' ').trim()) || u.email || 'esta cuenta';
+    const localLabel = newRole === 'encargada' ? ` en ${localNameById(newLocalId)}` : '';
+    const ok = await showConfirm({
+        title: '¿Confirmar el cambio?',
+        message: `${name} va a quedar como ${ROLE_LABEL[newRole]}${localLabel}.`,
+        okText: 'Confirmar',
+        cancelText: 'Cancelar'
+    });
+    if (!ok) return;
+
+    const saveBtn = document.getElementById('editUserSaveBtn');
+    saveBtn.disabled = true;
+    try {
+        const payload = { role: newRole };
+        if (newRole === 'encargada') payload.localId = newLocalId;
+        else payload.localId = firebase.firestore.FieldValue.delete();
+        await userDocRef(editingUserUid).update(payload);
+        const idx = adminUsers.findIndex(x => x.uid === editingUserUid);
+        if (idx !== -1) adminUsers[idx] = { ...adminUsers[idx], role: newRole, localId: newRole === 'encargada' ? newLocalId : null };
+        renderAdminUsersList();
+        closeEditUserModal();
+        showToast('Acceso actualizado');
+    } catch (err) {
+        console.error('[HORAX] Error actualizando el usuario:', err);
+        errorEl.textContent = 'No se pudo guardar el cambio (revisá las reglas de Firestore).';
+        errorEl.style.display = 'block';
+    } finally {
+        saveBtn.disabled = false;
+    }
+}
+
 function handleSignedOut() {
     currentUser = null;
     userProfile = null;
     currentRole = null;
     currentLocalId = null;
     availableLocals = [];
+    adminUsers = [];
+    adminUsersLoaded = false;
     applyProfileToHeader();
     closeProfileModal(true);
     overtimeData = [];
@@ -337,6 +595,7 @@ function handleSignedOut() {
     if (localDocUnsubscribe) { localDocUnsubscribe(); localDocUnsubscribe = null; }
     const bar = document.getElementById('localBar');
     if (bar) bar.remove();
+    updateAdminTabVisibility();
     const logoutBtn = document.getElementById('logoutBtn');
     if (logoutBtn) logoutBtn.style.display = 'none';
     resetLoginCard();
@@ -1237,6 +1496,7 @@ function switchTab(tabId) {
     currentTab = tabId;
     if (tabId === 'tabSummary') renderSummary();
     if (tabId === 'tabCalendar') renderCalendar();
+    if (tabId === 'tabAdmin') renderAdminPanel();
     if (tabId === 'tabAdd') {
         // Si venís de un día elegido en el Calendario, "Agregar" arranca en ese
         // día en vez de siempre en hoy.
@@ -2737,6 +2997,14 @@ function init() {
     document.getElementById('auditCloseBtn').addEventListener('click', closeAuditModal);
     document.getElementById('auditModal').addEventListener('click', ev => {
         if (ev.target.id === 'auditModal') closeAuditModal();
+    });
+
+    document.getElementById('createLocalBtn').addEventListener('click', createNewLocalFromForm);
+    document.getElementById('editUserRole').addEventListener('change', updateEditUserLocalVisibility);
+    document.getElementById('editUserSaveBtn').addEventListener('click', saveEditUserFromModal);
+    document.getElementById('editUserCancelBtn').addEventListener('click', closeEditUserModal);
+    document.getElementById('editUserModal').addEventListener('click', ev => {
+        if (ev.target.id === 'editUserModal') closeEditUserModal();
     });
 
     const dropZone = document.getElementById('pdfDropZone');
