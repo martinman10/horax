@@ -328,9 +328,16 @@ function renderLocalBar() {
 // ============================================================
 //  PANEL DE ADMINISTRACIÓN
 //  Solo lo ve currentRole === 'admin'. Permite ver/editar el rol y local de
-//  cada cuenta, y crear o borrar locales, sin entrar a la consola de Firebase.
-//  Editar el rol/local de OTRA cuenta y listar la colección users requieren
-//  reglas de Firestore nuevas (ver el mensaje aparte con las reglas).
+//  cada cuenta, borrar cuentas (encargadas u otras admins) y crear locales,
+//  sin entrar a la consola de Firebase.
+//  Editar/borrar OTRA cuenta y listar la colección users requieren reglas
+//  de Firestore nuevas (ver el mensaje aparte con las reglas).
+//  Nota: borrar una cuenta acá solo borra su documento en Firestore (pierde
+//  rol y local al toque). No borra el login de Firebase Auth: si esa persona
+//  vuelve a entrar con esa cuenta, la app la trata como "primera vez" y le
+//  vuelve a pedir nombre y local (se auto-asigna admin de nuevo si el mail
+//  es el ADMIN_EMAIL fijo). Para dar de baja el login en sí hay que ir a la
+//  consola de Firebase (Authentication).
 // ============================================================
 let adminUsers = [];          // cache de {uid, email, role, localId, profile} para el panel
 let adminUsersLoaded = false;
@@ -396,12 +403,49 @@ function renderAdminUsersList() {
                     ${u.role === 'encargada' ? `<span class="badge badge-local">${escapeHtml(localNameById(u.localId))}</span>` : ''}
                 </div>
             </div>
-            ${isSelf ? '' : `<button class="sd-btn sd-edit admin-edit-btn" data-uid="${u.uid}" title="Editar acceso"><i class="fas fa-pen"></i></button>`}
+            ${isSelf ? '' : `<div class="admin-user-actions">
+                <button class="sd-btn sd-edit admin-edit-btn" data-uid="${u.uid}" title="Editar acceso"><i class="fas fa-pen"></i></button>
+                <button class="sd-btn sd-delete admin-delete-user-btn" data-uid="${u.uid}" title="Eliminar cuenta"><i class="fas fa-trash-alt"></i></button>
+            </div>`}
         </div>`;
     }).join('');
     list.querySelectorAll('.admin-edit-btn').forEach(btn => {
         btn.addEventListener('click', () => openEditUserModal(btn.dataset.uid));
     });
+    list.querySelectorAll('.admin-delete-user-btn').forEach(btn => {
+        btn.addEventListener('click', () => deleteUserFromAdmin(btn.dataset.uid));
+    });
+}
+
+// Borra el documento de la cuenta en Firestore (pierde rol y local).
+// No borra el login de Firebase Auth (ver nota más arriba).
+async function deleteUserFromAdmin(uid) {
+    const u = adminUsers.find(x => x.uid === uid);
+    if (!u) return;
+    if (currentUser && uid === currentUser.uid) return; // por las dudas, nunca a sí misma
+    const name = (u.profile && [u.profile.firstName, u.profile.lastName].filter(Boolean).join(' ').trim()) || u.email || 'esta cuenta';
+    const isHardcodedAdmin = (u.email || '').toLowerCase() === ADMIN_EMAIL.toLowerCase();
+    let message = `Se va a eliminar el acceso de ${name} (${u.email || 'sin mail'}). Esta acción no se puede deshacer. Si vuelve a iniciar sesión con esa cuenta, la app la va a tratar como nueva y le va a volver a pedir nombre y local.`;
+    if (isHardcodedAdmin) {
+        message += ' Ojo: ese mail está configurado como admin fijo de la app, así que va a recuperar el rol de admin apenas vuelva a entrar.';
+    }
+    const ok = await showConfirm({
+        title: '¿Eliminar esta cuenta?',
+        message,
+        okText: 'Eliminar',
+        cancelText: 'Cancelar',
+        danger: true
+    });
+    if (!ok) return;
+    try {
+        await userDocRef(uid).delete();
+        adminUsers = adminUsers.filter(x => x.uid !== uid);
+        renderAdminUsersList();
+        showToast(`Cuenta de ${name} eliminada`);
+    } catch (err) {
+        console.error('[HORAX] Error eliminando la cuenta:', err);
+        showToast('No se pudo eliminar la cuenta');
+    }
 }
 
 function renderAdminLocalsList() {
@@ -415,11 +459,7 @@ function renderAdminLocalsList() {
     list.innerHTML = sorted.map(l => `
         <div class="admin-local-row">
             <span class="admin-local-name"><i class="fas fa-store"></i> ${escapeHtml(l.name)}</span>
-            <button class="sd-btn sd-edit admin-delete-local-btn" data-id="${l.id}" data-name="${escapeHtml(l.name)}" title="Eliminar local"><i class="fas fa-trash-alt"></i></button>
         </div>`).join('');
-    list.querySelectorAll('.admin-delete-local-btn').forEach(btn => {
-        btn.addEventListener('click', () => deleteLocalFromAdmin(btn.dataset.id, btn.dataset.name));
-    });
 }
 
 async function refreshAvailableLocals() {
@@ -455,45 +495,6 @@ async function createNewLocalFromForm() {
         showToast('No se pudo crear el local');
     } finally {
         if (btn) btn.disabled = false;
-    }
-}
-
-// Solo deja borrar un local si no tiene extras cargadas (chequeo en vivo,
-// no confiamos en datos viejos en caché). El historial de auditoría de ese
-// local, si tuviera, queda huérfano: hay que borrarlo a mano en la consola
-// de Firebase si hiciera falta, la app no puede borrar subcolecciones.
-async function deleteLocalFromAdmin(localId, name) {
-    let entriesCount = null;
-    try {
-        const snap = await localDocRef(localId).get();
-        const entries = (snap.exists && snap.data().entries) || [];
-        entriesCount = entries.length;
-    } catch (err) {
-        console.error('[HORAX] Error revisando el local antes de borrar:', err);
-        showToast('No se pudo revisar el local, probá de nuevo');
-        return;
-    }
-    if (entriesCount > 0) {
-        showToast(`"${name}" tiene ${entriesCount} extra${entriesCount === 1 ? '' : 's'} cargada${entriesCount === 1 ? '' : 's'}: vaciala antes de borrar el local`, 4200);
-        return;
-    }
-    const ok = await showConfirm({
-        title: '¿Eliminar este local?',
-        message: `Se va a eliminar "${name}". Esta acción no se puede deshacer, y cualquier encargada asignada a este local va a quedar sin local hasta que le asignes otro.`,
-        okText: 'Eliminar',
-        cancelText: 'Cancelar',
-        danger: true
-    });
-    if (!ok) return;
-    try {
-        await localDocRef(localId).delete();
-        await refreshAvailableLocals();
-        renderAdminLocalsList();
-        renderLocalBar();
-        showToast(`Local "${name}" eliminado`);
-    } catch (err) {
-        console.error('[HORAX] Error eliminando el local:', err);
-        showToast('No se pudo eliminar el local');
     }
 }
 

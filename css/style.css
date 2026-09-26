@@ -430,6 +430,8 @@
 .sd-check.checked { background: #10B981; border-color: #10B981; }
 .sd-edit { width: 28px; height: 28px; color: var(--text-light); font-size: 13px; }
 .sd-edit:active { color: var(--primary-ink); }
+.sd-delete { width: 28px; height: 28px; color: #EF4444; font-size: 13px; }
+.sd-delete:active { color: #B91C1C; }
 
 /* Deshacer última importación */
 .undo-import { display: none; align-items: center; justify-content: space-between; gap: 12px; background: var(--card); border-radius: var(--radius-sm); box-shadow: var(--shadow-sm); padding: 12px 14px; margin-top: 12px; }
@@ -485,6 +487,7 @@
 .admin-you-tag { font-weight: 400; color: var(--text-light); font-size: 12px; }
 .admin-user-email { font-size: 12px; color: var(--text-light); margin: 2px 0 6px; word-break: break-all; }
 .admin-user-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.admin-user-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
 .badge-admin { background: #EDE9FE; color: #6D28D9; }
 .badge-encargada { background: #DBEAFE; color: #1D4ED8; }
 .badge-local { background: var(--bg); color: var(--text-secondary); border: 1px solid var(--border); }
