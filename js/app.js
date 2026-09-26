@@ -328,8 +328,9 @@ function renderLocalBar() {
 // ============================================================
 //  PANEL DE ADMINISTRACIÓN
 //  Solo lo ve currentRole === 'admin'. Permite ver/editar el rol y local de
-//  cada cuenta, borrar cuentas (encargadas u otras admins) y crear locales,
-//  sin entrar a la consola de Firebase.
+//  cada cuenta y borrar cuentas (encargadas u otras admins), sin entrar a
+//  la consola de Firebase. Los locales solo se ven, no se crean ni se
+//  borran desde acá: eso sigue siendo a mano en la consola de Firebase.
 //  Editar/borrar OTRA cuenta y listar la colección users requieren reglas
 //  de Firestore nuevas (ver el mensaje aparte con las reglas).
 //  Nota: borrar una cuenta acá solo borra su documento en Firestore (pierde
@@ -460,42 +461,6 @@ function renderAdminLocalsList() {
         <div class="admin-local-row">
             <span class="admin-local-name"><i class="fas fa-store"></i> ${escapeHtml(l.name)}</span>
         </div>`).join('');
-}
-
-async function refreshAvailableLocals() {
-    try {
-        const snap = await localsCollectionRef().get();
-        availableLocals = snap.docs
-            .map(d => ({ id: d.id, name: (d.data() && d.data().name) || d.id }))
-            .sort((a, b) => a.name.localeCompare(b.name, 'es'));
-    } catch (err) {
-        console.error('[HORAX] Error actualizando la lista de locales:', err);
-    }
-}
-
-async function createNewLocalFromForm() {
-    const input = document.getElementById('newLocalName');
-    if (!input) return;
-    const name = input.value.trim();
-    if (!name) { showToast('Escribí un nombre para el local'); return; }
-    if (availableLocals.some(l => l.name.toLowerCase() === name.toLowerCase())) {
-        showToast('Ya existe un local con ese nombre'); return;
-    }
-    const btn = document.getElementById('createLocalBtn');
-    if (btn) btn.disabled = true;
-    try {
-        await localsCollectionRef().add({ name });
-        input.value = '';
-        await refreshAvailableLocals();
-        renderAdminLocalsList();
-        renderLocalBar();
-        showToast(`Local "${name}" creado`);
-    } catch (err) {
-        console.error('[HORAX] Error creando el local:', err);
-        showToast('No se pudo crear el local');
-    } finally {
-        if (btn) btn.disabled = false;
-    }
 }
 
 // ---- Editar el rol / local de una cuenta (con confirmación) ----
@@ -3000,7 +2965,6 @@ function init() {
         if (ev.target.id === 'auditModal') closeAuditModal();
     });
 
-    document.getElementById('createLocalBtn').addEventListener('click', createNewLocalFromForm);
     document.getElementById('editUserRole').addEventListener('change', updateEditUserLocalVisibility);
     document.getElementById('editUserSaveBtn').addEventListener('click', saveEditUserFromModal);
     document.getElementById('editUserCancelBtn').addEventListener('click', closeEditUserModal);

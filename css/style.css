@@ -497,9 +497,3 @@
     border: 1px solid var(--border);
 }
 .admin-local-name { font-size: 14px; font-weight: 500; display: flex; align-items: center; gap: 8px; }
-.admin-new-local { display: flex; gap: 8px; margin-top: 10px; }
-.admin-new-local input {
-    flex: 1; padding: 12px 14px; border: 1.5px solid var(--border); border-radius: var(--radius-sm);
-    font-size: 15px; font-family: inherit; background: var(--bg); color: var(--text);
-}
-.admin-new-local .btn-submit { flex-shrink: 0; padding: 0 18px; }
