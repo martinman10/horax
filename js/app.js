@@ -1995,6 +1995,7 @@ function extractEntriesFromSource(rawItems, imageData, colorScale, geomScale, ba
     // OCR. Se llenan más abajo, barriendo la grilla por color en vez de por
     // texto — así no dependen de que el OCR haya encontrado la palabra.
     const missingGrayCells = [];
+    const regularCells = []; // ★ NUEVO: celdas normales (no grises), para la regla de las 8 hs
 
     const words = mergeTextFragments(rawItems, geomScale);
     const dayHeaders = findDayHeaders(words, 25 * geomScale);
@@ -2204,7 +2205,17 @@ function extractEntriesFromSource(rawItems, imageData, colorScale, geomScale, ba
                 });
             }
 
-            if (!colorInfo || !colorInfo.isGray) continue;
+            if (!colorInfo) continue;
+
+            // ★ NUEVO: las celdas normales (no grises) ya no se descartan: se guardan
+            // para contar cuántas horas normales tiene cada persona en el día.
+            if (!colorInfo.isGray) {
+                regularCells.push({
+                    date: formatDate(new Date(col.year, col.month, col.day)),
+                    start: row.start, end: row.end, person: name
+                });
+                continue;
+            }
             dbg.grayCells++;
 
             const dateStr = formatDate(new Date(col.year, col.month, col.day));
@@ -2239,7 +2250,50 @@ function extractEntriesFromSource(rawItems, imageData, colorScale, geomScale, ba
         }
     }
 
+    // ★ NUEVO: pasadas las 8 hs normales en un mismo día, lo que sigue es extra.
+    entries.push(...overflowExtrasFromRegularCells(regularCells));
+    dbg.autoExtras = entries.filter(e => e.auto).length;
+
     return { entries, dbg, zones, missingGrayCells };
+}
+
+// ============================================================
+//  ★ REGLA DE LAS 8 HORAS
+//  Si una persona tiene más de 8 hs NORMALES (celdas no grises) en el mismo
+//  día, desde la 9na hora en adelante se convierte automáticamente en extra.
+//  Las horas que ya vienen grises no cuentan para las 8 (ya son extras).
+// ============================================================
+const MAX_REGULAR_HOURS_PER_DAY = 8;
+
+function timeToMin(t) { const [h, m] = t.split(':').map(Number); return h * 60 + m; }
+function minToTime(m) { return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); }
+
+function overflowExtrasFromRegularCells(cells) {
+    const limit = MAX_REGULAR_HOURS_PER_DAY * 60;
+    const groups = new Map();
+    for (const c of cells) {
+        const key = `${c.date}|${c.person}`;
+        if (!groups.has(key)) groups.set(key, new Map());
+        groups.get(key).set(c.start, c); // mismo inicio repetido = misma celda
+    }
+    const extras = [];
+    for (const byStart of groups.values()) {
+        const list = [...byStart.values()].sort((a, b) => timeToMin(a.start) - timeToMin(b.start));
+        let acc = 0; // minutos normales acumulados en el día
+        for (const c of list) {
+            const s = timeToMin(c.start), e = timeToMin(c.end);
+            const dur = Math.max(0, e - s);
+            if (dur === 0) continue;
+            if (acc >= limit) {
+                extras.push({ date: c.date, start: c.start, end: c.end, person: c.person, done: false, auto: true });
+            } else if (acc + dur > limit) {
+                // la celda cruza el límite: solo el tramo que pasa de las 8 hs es extra
+                extras.push({ date: c.date, start: minToTime(e - (acc + dur - limit)), end: c.end, person: c.person, done: false, auto: true });
+            }
+            acc += dur;
+        }
+    }
+    return extras;
 }
 
 // ============================================================
@@ -2731,6 +2785,7 @@ function mergeConsecutive(entries) {
                 current = { ...e };
             } else if (current.end === e.start) {
                 current.end = e.end;
+                if (!e.auto) delete current.auto;
             } else if (current.start <= e.start && e.end <= current.end) {
                 // contenido
             } else {
@@ -2766,7 +2821,7 @@ function showPdfPreview(entries) {
         previewList.map(e => {
             const c = getEmployeeColor(e.person);
             return `<span class="extra-chip" style="border-left-color:${c};">
-                ${formatDateDisplay(e.date)} · ${e.person} · ${e.start}-${e.end}</span>`;
+                ${formatDateDisplay(e.date)} · ${e.person} · ${e.start}-${e.end}${e.auto ? ' · (+8 hs)' : ''}</span>`;
         }).join('') +
         (entries.length > 40 ? `<span class="extra-chip">… y ${entries.length - 40} más</span>` : '');
 
@@ -2834,7 +2889,8 @@ function importPdfData() {
     const importId = Date.now(); // marca para poder deshacer esta importación
     const newEntries = fresh.map(item => ({
         id: ++maxId, date: item.date, start: item.start,
-        end: item.end, person: item.person, done: false, importId
+        end: item.end, person: item.person, done: false, importId,
+        comment: item.auto ? 'Auto: pasó de las 8 hs del día' : ''
     }));
     overtimeData = overtimeData.concat(newEntries);
     saveData();
