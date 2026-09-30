@@ -19,31 +19,26 @@
     <link rel="icon" type="image/png" sizes="512x512" href="./icons/icon-512.png" />
 
     <!-- Preconnect para performance -->
-    <link rel="preconnect" href="https://cdnjs.cloudflare.com" />
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
+    <link rel="preconnect" href="https://www.gstatic.com" crossorigin />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 
     <!-- Librerías externas -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet" />
-    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" crossorigin="anonymous" />
+    <!-- La tipografía no bloquea la pantalla: se ve el texto ya y Inter entra cuando llega -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet" media="print" onload="this.media='all'" crossorigin="anonymous" />
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet" /></noscript>
+
     <!-- Estilos propios -->
     <link rel="stylesheet" href="./css/style.css" />
 
-    <!-- PDF.js - debe cargarse antes que app.js -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-
-    <!-- Tesseract.js - lector OCR para cuando el horario llega como foto/imagen en vez de PDF -->
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-
-    <!-- Firebase (login con Google + guardado en la nube) -->
-    <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-messaging-compat.js"></script>
-
-    <!-- html2pdf.js - genera PDF del resumen con colores (sin pasar por "imprimir") -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <!-- Firebase (login con Google + guardado en la nube). "defer": no frena el dibujo de la pantalla y se ejecutan en orden, antes de app.js -->
+    <script defer crossorigin="anonymous" src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+    <script defer crossorigin="anonymous" src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
+    <script defer crossorigin="anonymous" src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+    <script defer crossorigin="anonymous" src="https://www.gstatic.com/firebasejs/10.13.2/firebase-messaging-compat.js"></script>
+    <!-- PDF.js, Tesseract (OCR) y html2pdf ya no se cargan al abrir: app.js las trae recién cuando se importa un horario o se exporta un PDF -->
 </head>
 <body>
 <div id="loginScreen" class="login-screen" style="display:none;">
@@ -416,6 +411,14 @@
                 navigator.serviceWorker.register('./sw.js')
                     .then(reg => console.log('✅ SW registrado', reg.scope))
                     .catch(err => console.log('❌ SW error', err));
+            });
+            // El service worker avisa cuando bajó una versión nueva en segundo plano
+            navigator.serviceWorker.addEventListener('message', e => {
+                if (!e.data || e.data.type !== 'HORAX_UPDATED' || document.getElementById('updateBanner')) return;
+                const b = document.createElement('div'); b.id = 'updateBanner'; b.className = 'install-banner';
+                b.innerHTML = '<div class="install-banner-icon"><i class="fas fa-rotate"></i></div><div class="install-banner-text"><strong>Hay una versión nueva</strong><small>Actualizá para verla.</small></div><button class="install-banner-cta" id="updateNow">Actualizar</button>';
+                document.body.appendChild(b);
+                document.getElementById('updateNow').onclick = () => location.reload();
             });
         }
     </script>
