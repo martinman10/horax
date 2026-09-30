@@ -372,9 +372,9 @@
 
     <!-- Modal "Cómo instalar" -->
     <div id="installModal" class="modal-overlay" style="display:none;">
-        <div class="modal-card install-card">
+        <div class="modal-card">
             <h2><i class="fas fa-mobile-screen-button" style="color:var(--primary-ink);margin-right:8px;"></i>Cómo instalar HORAX</h2>
-            <p class="modal-hint">Elegí tu dispositivo y seguí los pasos. Se hace una sola vez.</p>
+            <p class="modal-hint">Elegí tu celular y seguí los pasos. Se hace una sola vez.</p>
 
             <div class="install-tabs" id="installTabs">
                 <button class="install-tab" data-os="ios"><i class="fab fa-apple"></i> iPhone</button>
@@ -382,16 +382,7 @@
                 <button class="install-tab" data-os="desktop"><i class="fas fa-desktop"></i> Compu</button>
             </div>
 
-            <div id="installStatus" class="install-status" style="display:none;"></div>
-            <div id="installWarn" class="install-warn" style="display:none;"></div>
-
-            <!-- Aparece solo si el navegador permite instalar con un toque (Android / Chrome / Edge) -->
-            <button type="button" class="btn-submit install-now" id="installNowBtn" style="display:none;">
-                <i class="fas fa-download"></i> Instalar ahora
-            </button>
-
-            <div class="install-steps" id="installSteps"></div>
-            <p class="install-note" id="installNote"></p>
+            <ol class="install-steps" id="installSteps"></ol>
 
             <div class="modal-actions">
                 <button class="btn-secondary" id="installCloseBtn">Cerrar</button>

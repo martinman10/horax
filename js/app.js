@@ -3679,8 +3679,6 @@ function bindGoogleLoginButton() {
         const errorEl = document.getElementById('loginError');
         if (errorEl) errorEl.style.display = 'none';
         const provider = new firebase.auth.GoogleAuthProvider();
-        // Siempre mostrar el selector de cuentas de Google (si no, entra directo con el último mail usado)
-        provider.setCustomParameters({ prompt: 'select_account' });
         auth.signInWithPopup(provider).catch(err => {
             console.error('[HORAX] Error de login:', err);
             if (errorEl) {
@@ -3888,31 +3886,11 @@ function init() {
 }
 // ============================================================
 //  TUTORIAL DE INSTALACIÓN (PWA)
-//  Detecta iPhone / Android / compu y muestra los pasos de cada uno,
-//  con mini-dibujos de los botones que hay que tocar.
-//  - En Android y en Chrome/Edge de compu, si el navegador lo permite,
-//    aparece el botón "Instalar ahora" (instala con un solo toque).
-//  - Se muestra el banner la primera vez que alguien entra (si no está
-//    instalada) y se puede reabrir desde el perfil ("¿Cómo instalar?").
-//  Datos verificados para iOS 26 (Safari), Chrome Android y Chrome/Edge/Safari de compu.
+//  Detecta iOS / Android / desktop y muestra los pasos según cada uno.
+//  Se muestra la primera vez que alguien entra (si no está instalada),
+//  y se puede reabrir desde el perfil ("¿Cómo instalar?").
 // ============================================================
 const INSTALL_DISMISSED_KEY = 'horax_install_dismissed_v1';
-let deferredInstallPrompt = null;   // evento nativo de instalación (Chrome / Edge / Android)
-let installCurrentOS = null;
-
-// Hay que escucharlo desde el arranque: Chrome lo dispara una sola vez.
-window.addEventListener('beforeinstallprompt', ev => {
-    ev.preventDefault();
-    deferredInstallPrompt = ev;
-    refreshInstallUI();
-});
-window.addEventListener('appinstalled', () => {
-    deferredInstallPrompt = null;
-    markInstallDismissed();
-    hideInstallBanner();
-    closeInstallModal();
-    if (typeof showToast === 'function') showToast('¡HORAX instalada! Abrila desde el ícono de tu pantalla ✨', 4500);
-});
 
 function isStandalone() {
     return (
@@ -3923,9 +3901,7 @@ function isStandalone() {
 }
 function detectPlatform() {
     const ua = navigator.userAgent || '';
-    // iPadOS 13+ se hace pasar por Mac, pero tiene pantalla táctil
-    const ipadOS = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
-    if ((/iPad|iPhone|iPod/.test(ua) && !window.MSStream) || ipadOS) return 'ios';
+    if (/iPad|iPhone|iPod/.test(ua) && !window.MSStream) return 'ios';
     if (/Android/.test(ua)) return 'android';
     return 'desktop';
 }
@@ -3936,208 +3912,41 @@ function markInstallDismissed() {
     try { localStorage.setItem(INSTALL_DISMISSED_KEY, '1'); } catch (_) {}
 }
 
-// ---- Mini-dibujos de la interfaz del celu (solo HTML/CSS, sin imágenes) ----
-const uiChip = (icon, label, hl) =>
-    `<span class="ui-chip${hl ? ' hl' : ''}"><i class="${icon}"></i>${label ? '<span>' + label + '</span>' : ''}</span>`;
-const uiDot = (icon, hl) =>
-    `<span class="ui-dot${hl ? ' hl' : ''}"><i class="${icon}"></i></span>`;
-const uiUrlbar = (right) =>
-    `<div class="ui-urlbar"><span class="ui-url"><i class="fas fa-lock"></i>${location.hostname || 'horax'}</span>${right || ''}</div>`;
-const uiRow = (icon, label, hl, iconLeft) => iconLeft
-    ? `<div class="ui-row left${hl ? ' hl' : ''}"><i class="${icon}"></i><span>${label}</span></div>`
-    : `<div class="ui-row${hl ? ' hl' : ''}"><span>${label}</span><i class="${icon}"></i></div>`;
-const uiSwitch = (label) =>
-    `<div class="ui-row"><span>${label}</span><span class="ui-switch on"></span></div>`;
-const uiBtn = (label) => `<span class="ui-btn hl">${label}</span>`;
-const uiAppIcon = () => `<span class="ui-appicon">H</span><span class="ui-appname">HORAX</span>`;
-
-// Pasos por plataforma
-function getInstallConfig(os) {
-    const ua = navigator.userAgent || '';
-    const here = detectPlatform() === os;   // ¿es el mismo dispositivo que está mirando esto?
-    const inAppBrowser = /FBAN|FBAV|Instagram|TikTok|Snapchat|Line\/|Twitter|GSA\//.test(ua);
-
-    if (os === 'ios') {
-        let warn = '';
-        if (here && /CriOS|FxiOS|EdgiOS|OPiOS/.test(ua)) {
-            warn = 'Estás en un navegador que no es Safari. Para que se instale bien (y lleguen los avisos), copiá el link y abrilo en <b>Safari</b>.';
-        } else if (here && inAppBrowser) {
-            warn = 'Estás dentro de otra app (Instagram, Facebook, etc.). Abrí este link en <b>Safari</b> para poder instalarla.';
-        }
-        return {
-            warn,
-            steps: [
-                {
-                    text: 'Abrí HORAX en <b>Safari</b>.',
-                    mock: uiChip('fas fa-compass', 'Safari', true),
-                    hint: 'Si llegaste desde WhatsApp u otra app, tocá el ícono de Safari (la brújula) o la opción <b>Abrir en Safari</b>.'
-                },
-                {
-                    text: 'Tocá los <b>tres puntitos</b> a la derecha de la barra de direcciones.',
-                    mock: uiUrlbar(uiDot('fas fa-ellipsis', true)),
-                    hint: '¿Tu iPhone es más viejo (antes de iOS 26) y no ves los puntitos? Entonces el botón <b>Compartir</b> (un cuadradito con una flecha hacia arriba) está abajo en el centro: tocalo y pasá al paso 4.'
-                },
-                {
-                    text: 'En el menú, tocá <b>Compartir</b>.',
-                    mock: uiRow('fas fa-arrow-up-from-bracket', 'Compartir', true)
-                },
-                {
-                    text: 'Deslizá la lista hacia arriba hasta encontrar <b>Agregar a pantalla de inicio</b> y tocala.',
-                    mock: uiRow('far fa-square-plus', 'Agregar a pantalla de inicio', true),
-                    hint: 'Está bastante abajo en la lista. No la confundas con <i>Agregar marcador</i>.'
-                },
-                {
-                    text: 'Dejá activado <b>Abrir como app web</b> y tocá <b>Agregar</b> (arriba a la derecha).',
-                    mock: uiSwitch('Abrir como app web') + uiBtn('Agregar'),
-                    hint: 'Si tu iPhone no muestra ese interruptor, no pasa nada: igual queda como app.'
-                },
-                {
-                    done: true,
-                    text: '¡Listo! Abrí HORAX desde el <b>ícono nuevo</b> de tu pantalla de inicio (no desde Safari).',
-                    mock: uiAppIcon()
-                }
-            ],
-            note: '<i class="fas fa-bell"></i> Los avisos solo funcionan si abrís la app desde el ícono, y necesitan iOS 16.4 o más nuevo.'
-        };
-    }
-
-    if (os === 'android') {
-        let warn = '';
-        if (here && inAppBrowser) {
-            warn = 'Estás dentro de otra app (Instagram, Facebook, etc.). Abrí este link en <b>Chrome</b> para poder instalarla.';
-        }
-        return {
-            warn,
-            steps: [
-                {
-                    text: 'Abrí HORAX en <b>Chrome</b>.',
-                    mock: uiChip('fab fa-chrome', 'Chrome', true)
-                },
-                {
-                    text: 'Tocá los <b>tres puntitos</b> arriba a la derecha.',
-                    mock: uiUrlbar(uiDot('fas fa-ellipsis-vertical', true))
-                },
-                {
-                    text: 'Tocá <b>Instalar app</b> (o <b>Agregar a la pantalla principal</b>).',
-                    mock: uiRow('fas fa-download', 'Instalar app', true, true),
-                    hint: 'Si te pregunta entre <b>Instalar</b> y <b>Crear acceso directo</b>, elegí <b>Instalar</b>: así queda como app de verdad.'
-                },
-                {
-                    text: 'Confirmá tocando <b>Instalar</b>.',
-                    mock: uiBtn('Instalar')
-                },
-                {
-                    done: true,
-                    text: '¡Listo! HORAX queda en tu pantalla de inicio y entre tus apps.',
-                    mock: uiAppIcon()
-                }
-            ],
-            note: '¿Usás otro navegador? En <b>Samsung Internet</b>: menú (☰) → <b>Agregar página a</b> → <b>Pantalla de inicio</b>. En <b>Firefox</b>: menú (⋮) → <b>Instalar</b>.'
-        };
-    }
-
-    // Computadora
-    return {
-        warn: '',
-        steps: [
-            {
-                text: 'Abrí HORAX en <b>Chrome</b> o <b>Edge</b>.',
-                mock: uiChip('fab fa-chrome', 'Chrome', false) + uiChip('fab fa-edge', 'Edge', false)
-            },
-            {
-                text: 'A la derecha de la barra de direcciones, hacé clic en el <b>ícono de instalar</b> (una pantallita con una flecha hacia abajo).',
-                mock: uiUrlbar(uiDot('fas fa-download', true)),
-                hint: 'Si no lo ves: menú (⋮) → <b>Guardar y compartir</b> → <b>Instalar página como app</b>. En Edge: menú (⋯) → <b>Aplicaciones</b> → <b>Instalar este sitio como aplicación</b>. Los nombres pueden variar un poco.'
-            },
-            {
-                text: 'Confirmá con <b>Instalar</b>.',
-                mock: uiBtn('Instalar')
-            },
-            {
-                done: true,
-                text: '¡Listo! Se abre en su propia ventana, como cualquier programa, y queda en tu menú de inicio o escritorio.',
-                mock: uiAppIcon()
-            }
-        ],
-        note: '<b>Safari en Mac</b>: menú <b>Archivo</b> → <b>Agregar al Dock</b>. <b>Firefox</b> en compu no permite instalar apps.'
-    };
-}
+// Steps por plataforma
+const INSTALL_STEPS = {
+    ios: [
+        'Abrí esta página en <b>Safari</b> (no en Chrome).',
+        'Tocá el botón <b>Compartir</b> abajo en el centro (el cuadradito con la flecha hacia arriba).',
+        'Deslizá la lista y elegí <b>"Agregar a pantalla de inicio"</b>.',
+        'Tocá <b>"Agregar"</b> arriba a la derecha. Listo ✨'
+    ],
+    android: [
+        'Abrí esta página en <b>Chrome</b>.',
+        'Tocá los <b>tres puntitos</b> arriba a la derecha.',
+        'Elegí <b>"Instalar aplicación"</b> o <b>"Agregar a pantalla de inicio"</b>.',
+        'Confirmá tocando <b>"Instalar"</b>. Listo ✨'
+    ],
+    desktop: [
+        'En la barra de direcciones de <b>Chrome</b>, buscá el ícono de <b>instalar</b> (una flechita hacia abajo en un cuadradito) a la derecha.',
+        'Hacé clic y elegí <b>"Instalar"</b>.',
+        'La app se abre en su propia ventana, como cualquier otro programa. Listo ✨'
+    ]
+};
 
 function renderInstallSteps(os) {
-    installCurrentOS = os;
     const stepsEl = document.getElementById('installSteps');
     const tabs = document.querySelectorAll('#installTabs .install-tab');
     if (!stepsEl) return;
-    const cfg = getInstallConfig(os);
-
-    let n = 0;
-    stepsEl.innerHTML = cfg.steps.map(s => {
-        const num = s.done ? '<i class="fas fa-check"></i>' : (++n);
-        return `<div class="install-step${s.done ? ' done' : ''}">
-            <div class="install-num">${num}</div>
-            <div class="install-body">
-                <p>${s.text}</p>
-                ${s.mock ? `<div class="install-mock">${s.mock}</div>` : ''}
-                ${s.hint ? `<p class="install-hint">${s.hint}</p>` : ''}
-            </div>
-        </div>`;
-    }).join('');
-
-    const noteEl = document.getElementById('installNote');
-    if (noteEl) { noteEl.innerHTML = cfg.note || ''; }
-    const warnEl = document.getElementById('installWarn');
-    if (warnEl) {
-        warnEl.innerHTML = cfg.warn ? '<i class="fas fa-triangle-exclamation"></i> ' + cfg.warn : '';
-        warnEl.style.display = cfg.warn ? 'block' : 'none';
-    }
+    const list = INSTALL_STEPS[os] || INSTALL_STEPS.desktop;
+    stepsEl.innerHTML = list.map(s => `<li>${s}</li>`).join('');
     tabs.forEach(t => t.classList.toggle('active', t.dataset.os === os));
-    refreshInstallUI();
-}
-
-// Muestra/oculta el botón "Instalar ahora" y ajusta el banner
-function refreshInstallUI() {
-    const nowBtn = document.getElementById('installNowBtn');
-    if (nowBtn) {
-        const canOneTap = !!deferredInstallPrompt && installCurrentOS === detectPlatform() &&
-            (installCurrentOS === 'android' || installCurrentOS === 'desktop');
-        nowBtn.style.display = canOneTap ? 'flex' : 'none';
-    }
-    const bannerBtn = document.getElementById('installBannerBtn');
-    if (bannerBtn) bannerBtn.textContent = deferredInstallPrompt ? 'Instalar' : 'Ver cómo';
-}
-
-// Instalación con un toque (solo cuando el navegador dio el permiso)
-async function triggerNativeInstall() {
-    const promptEv = deferredInstallPrompt;
-    if (!promptEv) return false;
-    deferredInstallPrompt = null;   // el evento solo se puede usar una vez
-    try {
-        promptEv.prompt();
-        const choice = await promptEv.userChoice;
-        if (choice && choice.outcome === 'accepted') { markInstallDismissed(); hideInstallBanner(); }
-    } catch (err) {
-        console.warn('[HORAX] No se pudo abrir el instalador nativo:', err);
-    }
-    refreshInstallUI();
-    return true;
 }
 
 function openInstallModal() {
     const modal = document.getElementById('installModal');
     if (!modal) return;
     renderInstallSteps(detectPlatform());
-    const statusEl = document.getElementById('installStatus');
-    if (statusEl) {
-        if (isStandalone()) {
-            statusEl.innerHTML = '<i class="fas fa-circle-check"></i> Ya estás usando HORAX como app instalada. Esto sirve para instalarla en otro celu o compu.';
-            statusEl.style.display = 'block';
-        } else {
-            statusEl.style.display = 'none';
-        }
-    }
     modal.style.display = 'flex';
-    const card = modal.querySelector('.install-card');
-    if (card) card.scrollTop = 0;
 }
 function closeInstallModal() {
     const modal = document.getElementById('installModal');
@@ -4147,7 +3956,6 @@ function closeInstallModal() {
 function showInstallBanner() {
     const banner = document.getElementById('installBanner');
     if (!banner) return;
-    refreshInstallUI();
     banner.style.display = 'flex';
 }
 function hideInstallBanner() {
@@ -4170,18 +3978,12 @@ function initInstallPrompt() {
     const btn = document.getElementById('installBannerBtn');
     const close = document.getElementById('installBannerClose');
     const closeBtn = document.getElementById('installCloseBtn');
-    const nowBtn = document.getElementById('installNowBtn');
     const modal = document.getElementById('installModal');
     const tabs = document.querySelectorAll('#installTabs .install-tab');
 
-    if (btn) btn.addEventListener('click', () => {
-        hideInstallBanner();
-        // Si el navegador permite instalar con un toque, lo hacemos directo
-        if (deferredInstallPrompt) triggerNativeInstall(); else openInstallModal();
-    });
+    if (btn) btn.addEventListener('click', () => { hideInstallBanner(); openInstallModal(); });
     if (close) close.addEventListener('click', () => { hideInstallBanner(); markInstallDismissed(); });
     if (closeBtn) closeBtn.addEventListener('click', closeInstallModal);
-    if (nowBtn) nowBtn.addEventListener('click', triggerNativeInstall);
     if (modal) modal.addEventListener('click', ev => { if (ev.target.id === 'installModal') closeInstallModal(); });
     tabs.forEach(t => t.addEventListener('click', () => renderInstallSteps(t.dataset.os)));
 
@@ -4202,3 +4004,5 @@ function initInstallPrompt() {
         }
     }
 }
+
+document.addEventListener('DOMContentLoaded', init);
