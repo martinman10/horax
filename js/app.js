@@ -134,6 +134,7 @@ async function handleSignedIn(user) {
     if (!userProfile || !userProfile.firstName) openProfileModal(true);
         // Banner "Instalá la app" (aparece la primera vez, si no está instalada)
     maybeShowInstallBanner();
+    maybeShowPushPrompt(); // ★ app instalada: pide activar los avisos la primera vez
 
     if (userDocUnsubscribe) userDocUnsubscribe();
     userDocUnsubscribe = ref.onSnapshot(doc => {
@@ -1133,36 +1134,46 @@ function currentLocalName() {
     const found = availableLocals.find(l => l.id === currentLocalId);
     return found ? found.name : (currentLocalId || 'este local');
 }
-// Borra todas las extras del MES DEL CALENDARIO que se está viendo.
-// Es lo que una encargada realmente quiere: "me equivoqué cargando este mes".
+// Borra las extras de lo que se está viendo:
+//  - En el Calendario: el mes calendario (1 al último día).
+//  - En el Resumen: el período de cierre que muestra (ej. "Octubre" = 26 sep al 25 oct).
+// Así el botón siempre borra lo mismo que ves en pantalla, aunque el Calendario esté en otro mes.
+function getClearScope() {
+    if (currentTab === 'tabSummary') {
+        const r = getSummaryRange(summaryYear, summaryMonth);
+        const name = new Date(summaryYear, summaryMonth, 1).toLocaleDateString('es-ES', { month: 'long' });
+        return {
+            label: name.charAt(0).toUpperCase() + name.slice(1), year: summaryYear,
+            detail: ` (del ${fmtDM(r.start)} al ${fmtDM(r.end)})`,
+            match: e => e.date >= r.start && e.date <= r.end
+        };
+    }
+    const name = new Date(currentYear, currentMonth, 1).toLocaleDateString('es-ES', { month: 'long' });
+    const prefix = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
+    return { label: name.charAt(0).toUpperCase() + name.slice(1), year: currentYear, detail: '', match: e => e.date.startsWith(prefix) };
+}
 async function clearMonth() {
     if (!currentLocalId) return;
-
-    const monthName = new Date(currentYear, currentMonth, 1)
-        .toLocaleDateString('es-ES', { month: 'long' });
-    const monthCap = monthName.charAt(0).toUpperCase() + monthName.slice(1);
-
-    const toDelete = getEntriesForMonth(currentYear, currentMonth);
+    const sc = getClearScope();
+    const toDelete = overtimeData.filter(sc.match);
     if (toDelete.length === 0) {
-        showToast(`No hay extras cargadas en ${monthCap}`);
+        showToast(`No hay extras cargadas en ${sc.label}`);
         return;
     }
 
     const ok = await showConfirm({
-        title: `¿Borrar las extras de ${monthCap}?`,
-        message: `Se van a borrar ${toDelete.length} ${toDelete.length === 1 ? 'extra' : 'extras'} de ${monthCap} ${currentYear} en ${currentLocalName()}. Esta acción no se puede deshacer.`,
-        okText: `Borrar ${monthCap}`,
+        title: `¿Borrar las extras de ${sc.label}?`,
+        message: `Se van a borrar ${toDelete.length} ${toDelete.length === 1 ? 'extra' : 'extras'} de ${sc.label} ${sc.year}${sc.detail} en ${currentLocalName()}. Esta acción no se puede deshacer.`,
+        okText: `Borrar ${sc.label}`,
         cancelText: 'Cancelar',
         danger: true
     });
     if (!ok) return;
 
-    overtimeData = overtimeData.filter(e =>
-        !(e.date.startsWith(`${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`))
-    );
+    overtimeData = overtimeData.filter(e => !sc.match(e));
     saveData(); renderAll();
-    showToast(`${monthCap} borrado`);
-    logAudit('delete', `Borró todas las extras de ${monthCap} ${currentYear} (${toDelete.length})`, null);
+    showToast(`${sc.label} borrado`);
+    logAudit('delete', `Borró todas las extras de ${sc.label} ${sc.year}${sc.detail} (${toDelete.length})`, null);
 }
 
 // Borra TODO el histórico del local. Solo desde el panel Admin.
@@ -2113,6 +2124,7 @@ function switchTab(tabId) {
     document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
     const b = document.querySelector(`.tab-btn[data-tab="${tabId}"]`); if (b) b.classList.add('active');
     currentTab = tabId;
+    const cb = document.getElementById('clearBtn'); if (cb) cb.title = tabId === 'tabSummary' ? 'Vaciar el período del Resumen' : 'Vaciar el mes';
     if (tabId === 'tabSummary') renderSummary();
     if (tabId === 'tabCalendar') renderCalendar();
     if (tabId === 'tabAdmin') renderAdminPanel();
@@ -3667,6 +3679,34 @@ function refreshPushUi() {
             ? 'Este dispositivo recibe un aviso la mañana de cada día que haya extras pendientes.'
             : 'Te avisamos la mañana de cada día que haya extras pendientes, para que entres a marcarlas.';
     }
+}
+
+// ---- Primer ingreso desde la app instalada: ofrecer activar los avisos ----
+// El permiso del navegador solo se puede pedir desde un toque del usuario (iPhone lo exige),
+// por eso primero se muestra este cartel y el permiso se pide al tocar "Activar".
+const PUSH_ASKED_KEY = 'horax_push_asked_v1_';
+function pushAsked() { try { return !!currentUser && localStorage.getItem(PUSH_ASKED_KEY + currentUser.uid) === '1'; } catch (_) { return false; } }
+function markPushAsked() { try { if (currentUser) localStorage.setItem(PUSH_ASKED_KEY + currentUser.uid, '1'); } catch (_) {} }
+function hidePushPrompt() { const b = document.getElementById('pushPrompt'); if (b) b.remove(); }
+function maybeShowPushPrompt() {
+    if (!isStandalone() || !currentUser || !currentLocalId || pushAsked()) return;
+    setTimeout(() => {
+        if (document.getElementById('pushPrompt') || pushAsked() || !currentUser) return;
+        if (!pushSupported() || !pushConfigured() || Notification.permission === 'denied' || getSavedPushToken()) return;
+        const pm = document.getElementById('profileModal');
+        if (pm && getComputedStyle(pm).display !== 'none') return; // está eligiendo su nombre: se pregunta la próxima vez
+        const b = document.createElement('div');
+        b.id = 'pushPrompt'; b.className = 'install-banner';
+        b.innerHTML = `<div class="install-banner-icon"><i class="fas fa-bell"></i></div>
+            <div class="install-banner-text"><strong>¿Activamos los avisos?</strong>
+            <small>Te avisamos la mañana de cada día que haya extras pendientes.</small></div>
+            <button class="install-banner-cta" id="pushPromptYes">Activar</button>
+            <button class="install-banner-close" id="pushPromptNo" title="Ahora no"><i class="fas fa-xmark"></i></button>`;
+        document.body.appendChild(b);
+        // enablePush() se llama directo desde el toque: así el permiso se puede pedir también en iPhone
+        document.getElementById('pushPromptYes').addEventListener('click', () => { markPushAsked(); hidePushPrompt(); enablePush(); });
+        document.getElementById('pushPromptNo').addEventListener('click', () => { markPushAsked(); hidePushPrompt(); });
+    }, 2500);
 }
 
 // Engancha el botón "Continuar con Google" de la tarjeta de login. Se llama
