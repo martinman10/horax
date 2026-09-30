@@ -52,3 +52,35 @@ self.addEventListener('fetch', event => {
       )
   );
 });
+
+// ============================================================
+//  AVISOS PUSH (mandados por la Cloud Function con Firebase Cloud Messaging)
+// ============================================================
+self.addEventListener('push', event => {
+  let payload = {};
+  try { payload = event.data ? event.data.json() : {}; } catch (_) {}
+  const d = payload.data || payload.notification || payload;
+  event.waitUntil(
+    self.registration.showNotification(d.title || 'HORAX', {
+      body: d.body || '',
+      icon: './icons/icon-192.png',
+      badge: './icons/icon-192.png',
+      tag: d.tag || 'horax-extras',
+      renotify: true,
+      data: { url: d.url || './index.html' }
+    })
+  );
+});
+
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const target = new URL((event.notification.data && event.notification.data.url) || './index.html', self.registration.scope).href;
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+      for (const c of list) {
+        if ('focus' in c) return c.focus();
+      }
+      return self.clients.openWindow(target);
+    })
+  );
+});

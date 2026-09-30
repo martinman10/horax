@@ -128,6 +128,7 @@ async function handleSignedIn(user) {
     updateAdminTabVisibility();
     subscribeToLocal(currentLocalId);
     showLoading(false);
+    syncPushToken(); // ★ NUEVO: si ya activó los avisos en este dispositivo, mantiene el token al día
 
     // Si todavía no eligió cómo llamarse, se lo pedimos antes de empezar.
     if (!userProfile || !userProfile.firstName) openProfileModal(true);
@@ -708,6 +709,7 @@ function openProfileModal(firstTime) {
     document.getElementById('profileError').style.display = 'none';
     modal.dataset.firstTime = firstTime ? '1' : '';
     modal.style.display = 'flex';
+    refreshPushUi();
     setTimeout(() => firstInput.focus(), 120);
 }
 
@@ -2910,6 +2912,110 @@ function importPdfData() {
     switchTab('tabCalendar');
 }
 
+// ============================================================
+//  ★ AVISOS (notificaciones push)
+//  El mismo día que haya extras pendientes, una Cloud Function (ver carpeta
+//  /functions) manda un aviso a los dispositivos que activaron esto.
+//  Cada dispositivo guarda su "token" en users/{uid}.fcmTokens.
+// ============================================================
+// Se saca de: Firebase Console → Configuración del proyecto → Cloud Messaging
+// → "Certificados push web" → Generar par de claves → copiar la "Clave pública".
+const VAPID_KEY = 'PEGAR_AQUI_LA_CLAVE_VAPID';
+const PUSH_TOKEN_KEY = 'horax_push_token_';
+
+function pushSupported() {
+    return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window &&
+        !!(firebase.messaging && firebase.messaging.isSupported && firebase.messaging.isSupported());
+}
+function pushConfigured() { return !VAPID_KEY.startsWith('PEGAR'); }
+function getSavedPushToken() {
+    try { return currentUser ? localStorage.getItem(PUSH_TOKEN_KEY + currentUser.uid) : null; } catch (_) { return null; }
+}
+async function fetchPushToken() {
+    const reg = await navigator.serviceWorker.ready;
+    return firebase.messaging().getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: reg });
+}
+async function savePushToken(token) {
+    await userDocRef(currentUser.uid).set(
+        { fcmTokens: firebase.firestore.FieldValue.arrayUnion(token) }, { merge: true });
+    try { localStorage.setItem(PUSH_TOKEN_KEY + currentUser.uid, token); } catch (_) {}
+}
+
+async function enablePush() {
+    if (!currentUser) return;
+    if (!pushSupported()) {
+        showToast('Este navegador no soporta avisos. En iPhone, primero agregá la app a la pantalla de inicio.', 5000);
+        return;
+    }
+    if (!pushConfigured()) { showToast('Falta pegar la clave VAPID en app.js'); return; }
+    try {
+        const perm = await Notification.requestPermission();
+        if (perm !== 'granted') {
+            showToast('No diste permiso para los avisos. Podés activarlo desde los ajustes del navegador.', 4500);
+            refreshPushUi();
+            return;
+        }
+        const token = await fetchPushToken();
+        if (!token) throw new Error('sin token');
+        await savePushToken(token);
+        showToast('Avisos activados en este dispositivo');
+    } catch (err) {
+        console.error('[HORAX] Error activando avisos:', err);
+        showToast('No se pudieron activar los avisos');
+    }
+    refreshPushUi();
+}
+
+async function disablePush() {
+    if (!currentUser) return;
+    const token = getSavedPushToken();
+    try {
+        if (token) {
+            await userDocRef(currentUser.uid).set(
+                { fcmTokens: firebase.firestore.FieldValue.arrayRemove(token) }, { merge: true });
+        }
+        try { await firebase.messaging().deleteToken(); } catch (_) {}
+        try { localStorage.removeItem(PUSH_TOKEN_KEY + currentUser.uid); } catch (_) {}
+        showToast('Avisos desactivados en este dispositivo');
+    } catch (err) {
+        console.error('[HORAX] Error desactivando avisos:', err);
+        showToast('No se pudieron desactivar los avisos');
+    }
+    refreshPushUi();
+}
+
+// Los tokens pueden cambiar con el tiempo: si ya estaban activados, se re-guardan solos.
+async function syncPushToken() {
+    try {
+        if (!pushSupported() || !pushConfigured() || !currentUser) return;
+        if (Notification.permission !== 'granted' || !getSavedPushToken()) return;
+        const token = await fetchPushToken();
+        if (token) await savePushToken(token);
+    } catch (err) {
+        console.warn('[HORAX] No se pudo actualizar el token de avisos:', err);
+    }
+}
+
+function refreshPushUi() {
+    const btn = document.getElementById('pushToggleBtn');
+    const hint = document.getElementById('pushHint');
+    if (!btn || !hint) return;
+    const on = pushSupported() && pushConfigured() && Notification.permission === 'granted' && !!getSavedPushToken();
+    btn.innerHTML = on
+        ? '<i class="fas fa-bell-slash"></i> Desactivar avisos en este dispositivo'
+        : '<i class="fas fa-bell"></i> Activar avisos de extras';
+    btn.dataset.on = on ? '1' : '';
+    if (!pushSupported()) {
+        hint.textContent = 'Este navegador no permite avisos. En iPhone tenés que agregar la app a la pantalla de inicio primero.';
+    } else if (Notification.permission === 'denied') {
+        hint.textContent = 'Bloqueaste los avisos para este sitio. Activalos desde los ajustes del navegador.';
+    } else {
+        hint.textContent = on
+            ? 'Este dispositivo recibe un aviso la mañana de cada día que haya extras pendientes.'
+            : 'Te avisamos la mañana de cada día que haya extras pendientes, para que entres a marcarlas.';
+    }
+}
+
 // Engancha el botón "Continuar con Google" de la tarjeta de login. Se llama
 // una vez al arrancar la app y de nuevo cada vez que resetLoginCard() recrea
 // el botón (porque quedó reemplazado por el formulario de alta automática).
@@ -2965,6 +3071,9 @@ function init() {
         });
     }
     document.getElementById('profileSaveBtn').addEventListener('click', saveProfileFromModal);
+    document.getElementById('pushToggleBtn').addEventListener('click', () => {
+        if (document.getElementById('pushToggleBtn').dataset.on === '1') disablePush(); else enablePush();
+    });
     document.getElementById('profileCancelBtn').addEventListener('click', () => closeProfileModal(true));
     document.getElementById('profileModal').addEventListener('click', ev => {
         if (ev.target.id === 'profileModal') closeProfileModal(false);

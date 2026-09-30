@@ -40,6 +40,7 @@
     <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-messaging-compat.js"></script>
 </head>
 <body>
 <div id="loginScreen" class="login-screen" style="display:none;">
@@ -217,6 +218,11 @@
             <div class="form-group">
                 <label>Color de la app</label>
                 <div class="theme-swatches" id="themeSwatches"></div>
+            </div>
+            <div class="form-group" id="pushGroup">
+                <label>Avisos de extras</label>
+                <button type="button" class="btn-secondary" id="pushToggleBtn" style="width:100%;"></button>
+                <p class="modal-hint" id="pushHint" style="margin:6px 0 0;"></p>
             </div>
             <p id="profileError" class="login-error" style="display:none;"></p>
             <div class="modal-actions">
