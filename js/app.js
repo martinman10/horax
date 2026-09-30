@@ -3948,12 +3948,39 @@ const IOS_TAIL = [
     { t: 'Dejá activado <b>Abrir como app web</b> y tocá <b>Agregar</b>, arriba a la derecha.<br><small>Si no ves ese interruptor, no pasa nada.</small>', s: () => scDialog(true, 'Agregar') },
     { t: '¡Listo! Ahora abrí HORAX desde el <b>ícono nuevo</b> de tu pantalla de inicio, no desde Safari.', s: scAppIcon, done: true }
 ];
+const INSTALL_IMG = './img/install/';
+// Captura real con círculos resaltados. hl = [[izq%, arriba%, ancho%, alto%, radio?], ...] sobre la imagen
+const shot = (file, hls) => `<div class="shot"><img src="${INSTALL_IMG}${file}" alt="" draggable="false">${(hls || []).map(h => `<span class="shot-hl" style="left:${h[0]}%;top:${h[1]}%;width:${h[2]}%;height:${h[3]}%;border-radius:${h[4] || '14px'}"></span>`).join('')}</div><div class="shot-hint">Tocá la imagen para agrandarla</div>`;
+function zoomShot(el) {
+    const o = document.createElement('div'); o.className = 'shot-zoom'; o.innerHTML = el.outerHTML;
+    o.addEventListener('click', () => o.remove()); document.body.appendChild(o);
+}
+const INSTALL_HEAD = {
+    ios: { banner: 'Instalá HORAX en tu iPhone', sub: 'Desde Safari, en menos de un minuto. Así también te llegan los avisos.', modal: 'Instalá HORAX en tu iPhone (Safari)' },
+    android: { banner: 'Instalá HORAX en tu Android', sub: 'Un toque y queda en tu pantalla de inicio.', modal: 'Instalá HORAX en tu Android (Chrome)' },
+    desktop: { banner: 'Instalá HORAX en tu compu', sub: 'Se abre en su propia ventana, sin buscarla en el navegador.', modal: 'Instalá HORAX en tu compu (Chrome o Edge)' }
+};
+function applyInstallHeadlines() {
+    const hb = INSTALL_HEAD[detectPlatform()], hm = INSTALL_HEAD[installOS];
+    const b = document.querySelector('#installBanner strong'), bs = document.querySelector('#installBanner small');
+    if (b && hb) b.textContent = hb.banner; if (bs && hb) bs.textContent = hb.sub;
+    const h2 = document.querySelector('#installModal h2');
+    if (h2 && hm && h2.lastChild) h2.lastChild.textContent = hm.modal;
+}
 const INSTALL_STEPS = {
     ios26: [
-        { t: 'Abrí HORAX en <b>Safari</b>.<br><small>Si llegaste desde WhatsApp, tocá <b>Abrir en Safari</b>.</small>', s: () => scBrand('Safari') },
-        { t: 'Tocá los <b>tres puntitos</b> al lado de la barra de direcciones.', s: () => scBar('dots') },
-        { t: 'En el menú, tocá <b>Compartir</b>.', s: () => scList([skel(55), scRow('share', 'Compartir', true), skel(70)]) },
-        ...IOS_TAIL
+        { h: 'Abrí HORAX en Safari', t: '<small>Si llegaste desde WhatsApp, tocá <b>Abrir en Safari</b>.</small>', s: () => scBrand('Safari'),
+          p: () => '<img class="sc-safari" src="' + INSTALL_IMG + 'safari.png" alt="Safari">' },
+        { h: 'Tocá los tres puntitos', t: 'Están a la derecha de la barra de direcciones.', s: () => scBar('dots'),
+          p: () => shot('ios-barra.jpg', [[79.1, 17.7, 12.2, 48.2, '50%']]) },
+        { h: 'Tocá Compartir', t: 'Es la primera opción del menú.', s: () => scList([skel(55), scRow('share', 'Compartir', true), skel(70)]),
+          p: () => shot('ios-menu.jpg', [[6.5, 4.5, 88.3, 10.6]]) },
+        { h: 'Tocá Agregar a Inicio', t: '<small>No la confundas con "Agregar marcador a…". Si no la ves, tocá <b>Ver más</b> o deslizá la lista hacia arriba.</small>', s: IOS_SHARE_SHEET,
+          p: () => shot('ios-compartir.jpg', [[5.1, 87.5, 89.9, 9.6]]) },
+        { h: 'Tocá Agregar', t: 'Dejá activado <b>Abrir como app web</b> y tocá <b>Agregar</b>, arriba a la derecha.<small>Si no ves ese interruptor, no pasa nada.</small>', s: () => scDialog(true, 'Agregar'),
+          p: () => shot('ios-agregar.jpg', [[71.7, 8.0, 24.2, 13.1, '999px'], [79.9, 74.5, 15.9, 8.5, '999px']]) },
+        { h: '¡Listo!', t: 'Abrí HORAX desde el <b>ícono nuevo</b> de tu pantalla de inicio, no desde Safari.', s: scAppIcon, done: true,
+          p: () => '<div class="sc-home"><img class="sc-homeimg" src="./icons/icon-192.png" alt="HORAX"><span>HORAX</span></div>' }
     ],
     ios18: [
         { t: 'Abrí HORAX en <b>Safari</b>.<br><small>Si llegaste desde WhatsApp, tocá <b>Abrir en Safari</b>.</small>', s: () => scBrand('Safari') },
@@ -3984,8 +4011,12 @@ function currentInstallKey() { return installOS === 'ios' ? 'ios' + installIOSVe
 
 function renderInstall() {
     const steps = INSTALL_STEPS[currentInstallKey()], st = steps[installIdx];
-    document.getElementById('installStage').innerHTML = st.s();
-    document.getElementById('installText').innerHTML = st.t;
+    const stage = document.getElementById('installStage');
+    stage.innerHTML = st.p ? st.p() : st.s();
+    // si una imagen no carga (sin internet, archivo faltante), se muestra el dibujo de respaldo
+    stage.querySelectorAll('img').forEach(im => im.addEventListener('error', () => { stage.innerHTML = st.s(); }, { once: true }));
+    const sh = stage.querySelector('.shot'); if (sh) sh.addEventListener('click', () => zoomShot(sh));
+    document.getElementById('installText').innerHTML = (st.h ? `<strong class="install-h">${st.h}</strong>` : '') + st.t;
     document.getElementById('installDots').innerHTML = steps.map((_, i) => `<i class="${i === installIdx ? 'on' : (i < installIdx ? 'past' : '')}"></i>`).join('');
     const prev = document.getElementById('installPrev'), next = document.getElementById('installNext');
     prev.style.visibility = installIdx === 0 ? 'hidden' : 'visible';
@@ -4005,7 +4036,7 @@ function setInstallOS(os) {
     if (here && /FBAN|FBAV|Instagram|TikTok|Snapchat|Line\/|Twitter|GSA\//.test(ua)) w = 'Estás dentro de otra app. Abrí este link en <b>' + (os === 'ios' ? 'Safari' : 'Chrome') + '</b> para poder instalarla.';
     else if (here && os === 'ios' && /CriOS|FxiOS|EdgiOS|OPiOS/.test(ua)) w = 'Este no es Safari. Para que se instale bien y lleguen los avisos, abrí el link en <b>Safari</b>.';
     warn.innerHTML = w; warn.style.display = w ? 'block' : 'none';
-    renderInstall(); refreshInstallUI();
+    renderInstall(); refreshInstallUI(); applyInstallHeadlines();
 }
 
 function refreshInstallUI() {
@@ -4031,7 +4062,7 @@ function openInstallModal() {
     modal.style.display = 'flex';
 }
 function closeInstallModal() { const m = document.getElementById('installModal'); if (m) m.style.display = 'none'; }
-function showInstallBanner() { const b = document.getElementById('installBanner'); if (b) { refreshInstallUI(); b.style.display = 'flex'; } }
+function showInstallBanner() { const b = document.getElementById('installBanner'); if (b) { refreshInstallUI(); applyInstallHeadlines(); b.style.display = 'flex'; } }
 function hideInstallBanner() { const b = document.getElementById('installBanner'); if (b) b.style.display = 'none'; }
 
 // Se llama desde handleSignedIn() cada vez que hay usuario + local

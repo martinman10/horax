@@ -1,4 +1,4 @@
-const CACHE_NAME = 'horax-v1';
+const CACHE_NAME = 'horax-v2';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -6,7 +6,12 @@ const ASSETS_TO_CACHE = [
   './js/app.js',
   './manifest.json',
   './icons/icon-192.png',
-  './icons/icon-512.png'
+  './icons/icon-512.png',
+  './img/install/safari.png',
+  './img/install/ios-barra.jpg',
+  './img/install/ios-menu.jpg',
+  './img/install/ios-compartir.jpg',
+  './img/install/ios-agregar.jpg'
 ];
 
 // Instalación - cachea lo que pueda (si falta un archivo, no se rompe todo)
