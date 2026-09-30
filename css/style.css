@@ -98,6 +98,7 @@
         }
         .calendar-grid .day-cell:active { transform: scale(0.92); }
         .calendar-grid .day-cell.other-month { color: var(--text-light); opacity: 0.4; }
+        .calendar-grid .day-cell.other-month.has-overtime { opacity: 0.75; }
         .calendar-grid .day-cell.today { background: var(--primary-bg); color: var(--primary-ink); font-weight: 700; }
         .calendar-grid .day-cell.has-overtime::after {
             content: ''; position: absolute; bottom: 4px; width: 6px; height: 6px;

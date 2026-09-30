@@ -1031,6 +1031,12 @@ function renderCalendar() {
     const daysInPrev = new Date(currentYear, currentMonth, 0).getDate();
     const todayStr = formatDate(hoyDate());
     const datesWithOT = getDatesWithOvertime(currentYear, currentMonth);
+    const allOTDates = new Set(overtimeData.map(e => e.date)); // para los días grises de meses vecinos
+    const otherCls = ds => {
+        if (!allOTDates.has(ds)) return 'day-cell other-month';
+        const st = getDayStatus(ds);
+        return 'day-cell other-month has-overtime' + (st === 'done' ? ' done' : st === 'pending' ? ' pending' : '');
+    };
 
     let html = '';
     for (const n of ['L','M','M','J','V','S','D']) html += `<div class="day-name">${n}</div>`;
@@ -1039,7 +1045,8 @@ function renderCalendar() {
     for (let i = startOffset - 1; i >= 0; i--) {
         const day = daysInPrev - i;
         const dateObj = new Date(currentYear, currentMonth - 1, day);
-        html += `<button class="day-cell other-month" data-date="${formatDate(dateObj)}">${day}</button>`;
+        const ds = formatDate(dateObj);
+        html += `<button class="${otherCls(ds)}" data-date="${ds}">${day}</button>`;
     }
     for (let d = 1; d <= daysInMonth; d++) {
         const dateObj = new Date(currentYear, currentMonth, d);
@@ -1060,7 +1067,8 @@ function renderCalendar() {
     const remaining = (7 - (totalCells % 7)) % 7;
     for (let d = 1; d <= remaining; d++) {
         const dateObj = new Date(currentYear, currentMonth + 1, d);
-        html += `<button class="day-cell other-month" data-date="${formatDate(dateObj)}">${d}</button>`;
+        const ds = formatDate(dateObj);
+        html += `<button class="${otherCls(ds)}" data-date="${ds}">${d}</button>`;
     }
     grid.innerHTML = html;
     renderTodayBarCalendar();
@@ -1068,7 +1076,14 @@ function renderCalendar() {
     grid.querySelectorAll('.day-cell').forEach(el => {
         el.addEventListener('click', () => {
             const date = el.dataset.date;
-            if (date) { selectedDate = date; renderCalendar(); }
+            if (!date) return;
+            selectedDate = date;
+            // tocar un día gris te lleva a ese mes
+            if (el.classList.contains('other-month')) {
+                const [yy, mm] = date.split('-').map(Number);
+                currentYear = yy; currentMonth = mm - 1;
+            }
+            renderCalendar();
         });
     });
 
@@ -1158,9 +1173,26 @@ function renderDayDetail(dateStr) {
 //  (ej. Septiembre = 26 ago → 25 sep; el día 25 cuenta en el mes que cierra)
 // ============================================================
 const CIERRE_DIA = 25;
-// Nota: el resumen ya no tiene mes propio; usa siempre currentMonth/currentYear
-// (el mismo mes que está mostrando el Calendario) para que ambas secciones
-// queden sincronizadas.
+
+// ★ El Resumen tiene su PROPIO período, independiente del mes del Calendario.
+// Así, a partir del día 26 el Resumen abre en el período que está corriendo
+// (ej. hoy 29 sep → "Octubre" = 26 sep al 25 oct) mientras el Calendario sigue
+// mostrando el mes real, donde se ven las extras de hoy.
+let summaryYear = hoyMVD().year;
+let summaryMonth = hoyMVD().month;
+
+// Período de cierre en el que cae HOY
+function currentCyclePeriod() {
+    const h = hoyMVD();
+    if (h.day > CIERRE_DIA) return h.month === 11 ? { year: h.year + 1, month: 0 } : { year: h.year, month: h.month + 1 };
+    return { year: h.year, month: h.month };
+}
+function goToCurrentPeriod() {
+    const p = currentCyclePeriod();
+    summaryYear = p.year; summaryMonth = p.month;
+    renderSummary();
+    updateBadges();
+}
 
 // A qué mes de cierre pertenece una fecha AAAA-MM-DD
 function getClosingPeriodOf(dateStr) {
@@ -1176,7 +1208,7 @@ function getSummaryRange(year, month) {
     return { startDate, endDate, start: formatDate(startDate), end: formatDate(endDate) };
 }
 function getEntriesForSummary() {
-    const r = getSummaryRange(currentYear, currentMonth);
+    const r = getSummaryRange(summaryYear, summaryMonth);
     return overtimeData.filter(e => e.date >= r.start && e.date <= r.end);
 }
 function entryHours(e) {
@@ -1186,12 +1218,11 @@ function entryHours(e) {
 }
 function fmtHours(h) { return String(Math.round(h * 100) / 100).replace('.', ','); }
 function shiftSummary(delta) {
-    currentMonth += delta;
-    if (currentMonth < 0) { currentMonth = 11; currentYear--; }
-    if (currentMonth > 11) { currentMonth = 0; currentYear++; }
-    selectedDate = null;
-    renderCalendar();
+    summaryMonth += delta;
+    if (summaryMonth < 0) { summaryMonth = 11; summaryYear--; }
+    if (summaryMonth > 11) { summaryMonth = 0; summaryYear++; }
     renderSummary();
+    updateBadges();
 }
 
 // Volver directo al mes actual (según Montevideo), sin importar cuánto te hayas alejado
@@ -1207,6 +1238,15 @@ function todayBarHtml() {
     const label = name.charAt(0).toUpperCase() + name.slice(1) + ' ' + h.year;
     return `<button type="button" class="today-bar" title="Volver al mes actual">
         <i class="fas fa-rotate-left"></i> Volver al mes actual <strong>(${label})</strong></button>`;
+}
+// Barra del Resumen: aparece cuando NO estás viendo el período en curso
+function summaryTodayBarHtml() {
+    const p = currentCyclePeriod();
+    if (summaryYear === p.year && summaryMonth === p.month) return '';
+    const name = new Date(p.year, p.month, 1).toLocaleDateString('es-ES', { month: 'long' });
+    const label = name.charAt(0).toUpperCase() + name.slice(1) + ' ' + p.year;
+    return `<button type="button" class="today-bar" data-scope="summary" title="Volver al período actual">
+        <i class="fas fa-rotate-left"></i> Volver al período actual <strong>(${label})</strong></button>`;
 }
 // En el Calendario la barra vive en un contenedor que se crea debajo del selector de mes
 function renderTodayBarCalendar() {
@@ -1225,7 +1265,6 @@ function goToToday() {
     currentMonth = h.month;
     selectedDate = formatDate(hoyDate());
     renderCalendar();
-    renderSummary();
 }
 
 // Personas desplegadas en el Resumen
@@ -1235,18 +1274,18 @@ let summaryRows = [];
 function renderSummary() {
     summaryRows = [];
     const container = document.getElementById('summaryContainer');
-    const range = getSummaryRange(currentYear, currentMonth);
-    const monthName = new Date(currentYear, currentMonth, 1)
+    const range = getSummaryRange(summaryYear, summaryMonth);
+    const monthName = new Date(summaryYear, summaryMonth, 1)
         .toLocaleDateString('es-ES', { month: 'long' });
     const fmtDay = d => d.toLocaleDateString('es-ES', { day: 'numeric', month: 'long' });
 
     let html = `
         <div class="month-nav">
             <button id="summaryPrev"><i class="fas fa-chevron-left"></i></button>
-            <span class="month-label">${monthName.charAt(0).toUpperCase() + monthName.slice(1)} <small>${currentYear}</small></span>
+            <span class="month-label">${monthName.charAt(0).toUpperCase() + monthName.slice(1)} <small>${summaryYear}</small></span>
             <button id="summaryNext"><i class="fas fa-chevron-right"></i></button>
         </div>
-        ${todayBarHtml()}
+        ${summaryTodayBarHtml()}
         <p style="text-align:center;font-size:12px;color:var(--text-light);margin:0 0 12px;">
             Del ${fmtDay(range.startDate)} al ${fmtDay(range.endDate)}
         </p>`;
@@ -2907,6 +2946,8 @@ function importPdfData() {
     if (newEntries.length > 0) {
         const [y, m] = newEntries[0].date.split('-').map(Number);
         currentYear = y; currentMonth = m - 1;
+        const pr = getClosingPeriodOf(newEntries[0].date);
+        summaryYear = pr.year; summaryMonth = pr.month;
         selectedDate = newEntries[0].date;
     }
     switchTab('tabCalendar');
@@ -2920,7 +2961,7 @@ function importPdfData() {
 // ============================================================
 // Se saca de: Firebase Console → Configuración del proyecto → Cloud Messaging
 // → "Certificados push web" → Generar par de claves → copiar la "Clave pública".
-const VAPID_KEY = 'BGB_8In3RnI_oN2EbtgYwxOojy4fIcv7lc7ThXy6BEaDRmmcSFHAH3v8YkzUilEmk-bhy-k_i2TIdMbHF3oXMSQ';
+const VAPID_KEY = 'PEGAR_AQUI_LA_CLAVE_VAPID';
 const PUSH_TOKEN_KEY = 'horax_push_token_';
 
 function pushSupported() {
@@ -3042,6 +3083,8 @@ function init() {
     const today = hoyDate();
     currentMonth = today.getMonth();
     currentYear = today.getFullYear();
+    const cyc = currentCyclePeriod();
+    summaryYear = cyc.year; summaryMonth = cyc.month;
     selectedDate = formatDate(today);
     const addDate = document.getElementById('addDate');
     if (addDate) addDate.value = formatDate(today);
@@ -3092,14 +3135,16 @@ function init() {
 
     document.getElementById('prevMonth').addEventListener('click', () => {
         currentMonth--; if (currentMonth < 0) { currentMonth = 11; currentYear--; }
-        selectedDate = null; renderCalendar(); renderSummary();
+        selectedDate = null; renderCalendar();
     });
     document.getElementById('nextMonth').addEventListener('click', () => {
         currentMonth++; if (currentMonth > 11) { currentMonth = 0; currentYear++; }
-        selectedDate = null; renderCalendar(); renderSummary();
+        selectedDate = null; renderCalendar();
     });
     document.addEventListener('click', ev => {
-        if (ev.target.closest && ev.target.closest('.today-bar')) goToToday();
+        const bar = ev.target.closest && ev.target.closest('.today-bar');
+        if (!bar) return;
+        if (bar.dataset.scope === 'summary') goToCurrentPeriod(); else goToToday();
     });
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.addEventListener('click', () => {
