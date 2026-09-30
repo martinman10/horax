@@ -2920,7 +2920,7 @@ function importPdfData() {
 // ============================================================
 // Se saca de: Firebase Console → Configuración del proyecto → Cloud Messaging
 // → "Certificados push web" → Generar par de claves → copiar la "Clave pública".
-const VAPID_KEY = 'PEGAR_AQUI_LA_CLAVE_VAPID';
+const VAPID_KEY = 'BGB_8In3RnI_oN2EbtgYwxOojy4fIcv7lc7ThXy6BEaDRmmcSFHAH3v8YkzUilEmk-bhy-k_i2TIdMbHF3oXMSQ';
 const PUSH_TOKEN_KEY = 'horax_push_token_';
 
 function pushSupported() {
