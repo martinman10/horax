@@ -132,6 +132,8 @@ async function handleSignedIn(user) {
 
     // Si todavía no eligió cómo llamarse, se lo pedimos antes de empezar.
     if (!userProfile || !userProfile.firstName) openProfileModal(true);
+        // Banner "Instalá la app" (aparece la primera vez, si no está instalada)
+    maybeShowInstallBanner();
 
     if (userDocUnsubscribe) userDocUnsubscribe();
     userDocUnsubscribe = ref.onSnapshot(doc => {
@@ -1131,21 +1133,61 @@ function currentLocalName() {
     const found = availableLocals.find(l => l.id === currentLocalId);
     return found ? found.name : (currentLocalId || 'este local');
 }
+// Borra todas las extras del MES DEL CALENDARIO que se está viendo.
+// Es lo que una encargada realmente quiere: "me equivoqué cargando este mes".
+async function clearMonth() {
+    if (!currentLocalId) return;
+
+    const monthName = new Date(currentYear, currentMonth, 1)
+        .toLocaleDateString('es-ES', { month: 'long' });
+    const monthCap = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+
+    const toDelete = getEntriesForMonth(currentYear, currentMonth);
+    if (toDelete.length === 0) {
+        showToast(`No hay extras cargadas en ${monthCap}`);
+        return;
+    }
+
+    const ok = await showConfirm({
+        title: `¿Borrar las extras de ${monthCap}?`,
+        message: `Se van a borrar ${toDelete.length} ${toDelete.length === 1 ? 'extra' : 'extras'} de ${monthCap} ${currentYear} en ${currentLocalName()}. Esta acción no se puede deshacer.`,
+        okText: `Borrar ${monthCap}`,
+        cancelText: 'Cancelar',
+        danger: true
+    });
+    if (!ok) return;
+
+    overtimeData = overtimeData.filter(e =>
+        !(e.date.startsWith(`${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`))
+    );
+    saveData(); renderAll();
+    showToast(`${monthCap} borrado`);
+    logAudit('delete', `Borró todas las extras de ${monthCap} ${currentYear} (${toDelete.length})`, null);
+}
+
+// Borra TODO el histórico del local. Solo desde el panel Admin.
 async function clearAllData() {
     if (!currentLocalId) return;
+    const total = overtimeData.length;
+    if (total === 0) {
+        showToast('No hay extras cargadas');
+        return;
+    }
     const ok = await showConfirm({
-        title: '¿Borrar todas las extras?',
-        message: `Se van a borrar TODAS las extras de ${currentLocalName()}. Esta acción no se puede deshacer.`,
-        okText: 'Borrar todo',
+        title: '¿Vaciar TODO el local?',
+        message: `Se van a borrar las ${total} extras cargadas en ${currentLocalName()}, de TODOS los meses. Esta acción no se puede deshacer.`,
+        okText: 'Sí, borrar todo',
         cancelText: 'Cancelar',
         danger: true
     });
     if (!ok) return;
     overtimeData = [];
     employeeColorsCache.clear();
-    saveData(); renderAll(); showToast('Datos eliminados');
-    logAudit('delete', 'Borró todas las extras del local', null);
+    saveData(); renderAll();
+    showToast('Local vaciado');
+    logAudit('delete', `Vació TODAS las extras del local (${total})`, null);
 }
+
 
 function getEntriesForDate(dateStr) { return overtimeData.filter(e => e.date === dateStr); }
 function getEntriesForMonth(year, month) {
@@ -3737,7 +3779,11 @@ function init() {
         selectedDate = date;
         switchTab('tabCalendar');
     });
-    document.getElementById('clearBtn').addEventListener('click', clearAllData);
+        // El tacho del header ahora borra SOLO el mes del calendario
+    document.getElementById('clearBtn').addEventListener('click', clearMonth);
+    // El botón de Admin sí borra todo (queda como válvula de escape)
+    const clearAllBtn = document.getElementById('clearAllBtn');
+    if (clearAllBtn) clearAllBtn.addEventListener('click', clearAllData);
 
     document.getElementById('viewAuditBtn').addEventListener('click', openAuditModal);
     document.getElementById('auditCloseBtn').addEventListener('click', closeAuditModal);
@@ -3833,7 +3879,130 @@ function init() {
     const hashTab = { '#add': 'tabAdd', '#calendar': 'tabCalendar' }[location.hash];
     if (hashTab) switchTab(hashTab);
 
+        // Tutorial de instalación PWA (banner + modal + botón en el perfil)
+    initInstallPrompt();
+
     console.log('✅ HORAX iniciada');
+}
+// ============================================================
+//  TUTORIAL DE INSTALACIÓN (PWA)
+//  Detecta iOS / Android / desktop y muestra los pasos según cada uno.
+//  Se muestra la primera vez que alguien entra (si no está instalada),
+//  y se puede reabrir desde el perfil ("¿Cómo instalar?").
+// ============================================================
+const INSTALL_DISMISSED_KEY = 'horax_install_dismissed_v1';
+
+function isStandalone() {
+    return (
+        (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+        window.navigator.standalone === true ||
+        (document.referrer && document.referrer.startsWith('android-app://'))
+    );
+}
+function detectPlatform() {
+    const ua = navigator.userAgent || '';
+    if (/iPad|iPhone|iPod/.test(ua) && !window.MSStream) return 'ios';
+    if (/Android/.test(ua)) return 'android';
+    return 'desktop';
+}
+function installDismissed() {
+    try { return localStorage.getItem(INSTALL_DISMISSED_KEY) === '1'; } catch (_) { return false; }
+}
+function markInstallDismissed() {
+    try { localStorage.setItem(INSTALL_DISMISSED_KEY, '1'); } catch (_) {}
+}
+
+// Steps por plataforma
+const INSTALL_STEPS = {
+    ios: [
+        'Abrí esta página en <b>Safari</b> (no en Chrome).',
+        'Tocá el botón <b>Compartir</b> abajo en el centro (el cuadradito con la flecha hacia arriba).',
+        'Deslizá la lista y elegí <b>"Agregar a pantalla de inicio"</b>.',
+        'Tocá <b>"Agregar"</b> arriba a la derecha. Listo ✨'
+    ],
+    android: [
+        'Abrí esta página en <b>Chrome</b>.',
+        'Tocá los <b>tres puntitos</b> arriba a la derecha.',
+        'Elegí <b>"Instalar aplicación"</b> o <b>"Agregar a pantalla de inicio"</b>.',
+        'Confirmá tocando <b>"Instalar"</b>. Listo ✨'
+    ],
+    desktop: [
+        'En la barra de direcciones de <b>Chrome</b>, buscá el ícono de <b>instalar</b> (una flechita hacia abajo en un cuadradito) a la derecha.',
+        'Hacé clic y elegí <b>"Instalar"</b>.',
+        'La app se abre en su propia ventana, como cualquier otro programa. Listo ✨'
+    ]
+};
+
+function renderInstallSteps(os) {
+    const stepsEl = document.getElementById('installSteps');
+    const tabs = document.querySelectorAll('#installTabs .install-tab');
+    if (!stepsEl) return;
+    const list = INSTALL_STEPS[os] || INSTALL_STEPS.desktop;
+    stepsEl.innerHTML = list.map(s => `<li>${s}</li>`).join('');
+    tabs.forEach(t => t.classList.toggle('active', t.dataset.os === os));
+}
+
+function openInstallModal() {
+    const modal = document.getElementById('installModal');
+    if (!modal) return;
+    renderInstallSteps(detectPlatform());
+    modal.style.display = 'flex';
+}
+function closeInstallModal() {
+    const modal = document.getElementById('installModal');
+    if (modal) modal.style.display = 'none';
+}
+
+function showInstallBanner() {
+    const banner = document.getElementById('installBanner');
+    if (!banner) return;
+    banner.style.display = 'flex';
+}
+function hideInstallBanner() {
+    const banner = document.getElementById('installBanner');
+    if (banner) banner.style.display = 'none';
+}
+
+// Se llama desde handleSignedIn() cada vez que hay usuario + local
+function maybeShowInstallBanner() {
+    if (isStandalone()) { markInstallDismissed(); return; }
+    if (installDismissed()) return;
+    if (!currentUser || !currentLocalId) return;
+    setTimeout(() => {
+        if (!installDismissed() && currentUser && currentLocalId) showInstallBanner();
+    }, 1200);
+}
+
+function initInstallPrompt() {
+    // Enganches de los botones (siempre, para que funcionen desde el perfil también)
+    const btn = document.getElementById('installBannerBtn');
+    const close = document.getElementById('installBannerClose');
+    const closeBtn = document.getElementById('installCloseBtn');
+    const modal = document.getElementById('installModal');
+    const tabs = document.querySelectorAll('#installTabs .install-tab');
+
+    if (btn) btn.addEventListener('click', () => { hideInstallBanner(); openInstallModal(); });
+    if (close) close.addEventListener('click', () => { hideInstallBanner(); markInstallDismissed(); });
+    if (closeBtn) closeBtn.addEventListener('click', closeInstallModal);
+    if (modal) modal.addEventListener('click', ev => { if (ev.target.id === 'installModal') closeInstallModal(); });
+    tabs.forEach(t => t.addEventListener('click', () => renderInstallSteps(t.dataset.os)));
+
+    // Botón "¿Cómo instalar?" dentro del modal de perfil
+    const profileModal = document.getElementById('profileModal');
+    if (profileModal && !document.getElementById('openInstallHelpBtn')) {
+        const pushGroup = document.getElementById('pushGroup');
+        if (pushGroup && pushGroup.parentNode) {
+            const group = document.createElement('div');
+            group.className = 'form-group';
+            group.innerHTML = `
+                <label>Instalar en el celu</label>
+                <button type="button" class="btn-secondary" id="openInstallHelpBtn" style="width:100%;">
+                    <i class="fas fa-mobile-screen-button"></i> ¿Cómo instalar HORAX?
+                </button>`;
+            pushGroup.parentNode.insertBefore(group, pushGroup);
+            document.getElementById('openInstallHelpBtn').addEventListener('click', openInstallModal);
+        }
+    }
 }
 
 document.addEventListener('DOMContentLoaded', init);
