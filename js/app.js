@@ -1349,6 +1349,10 @@ function renderSummary() {
     }
     container.innerHTML = html;
 
+    // ★ NUEVO (#5): mostrar u ocultar los botones de exportar según si hay datos
+    const exportRow = document.getElementById('exportRow');
+    if (exportRow) exportRow.style.display = entries.length > 0 ? 'flex' : 'none';
+
     // Tocar una persona para ver / ocultar su detalle
     container.querySelectorAll('.sum-row').forEach(tr => {
         tr.addEventListener('click', () => {
@@ -1431,6 +1435,181 @@ function updateBadges() {
     if (!badge) return;
     if (pendingHours > 0) { badge.textContent = fmtHours(pendingHours); badge.style.display = 'flex'; }
     else badge.style.display = 'none';
+}
+
+// ============================================================
+//  ★ NUEVO (#5): EXPORTAR RESUMEN (CSV / PDF)
+// ============================================================
+
+// Arma el CSV del período del Resumen que se está viendo
+function buildSummaryCsv() {
+    const entries = getEntriesForSummary();
+    if (entries.length === 0) return null;
+
+    const range = getSummaryRange(summaryYear, summaryMonth);
+    const monthName = new Date(summaryYear, summaryMonth, 1)
+        .toLocaleDateString('es-ES', { month: 'long' });
+    const monthLabel = monthName.charAt(0).toUpperCase() + monthName.slice(1) + '_' + summaryYear;
+
+    // Ordenado por persona y después por fecha/hora
+    const sorted = [...entries].sort((a, b) =>
+        a.person.localeCompare(b.person, 'es') ||
+        a.date.localeCompare(b.date) ||
+        a.start.localeCompare(b.start)
+    );
+
+    const rows = [['Persona', 'Fecha', 'Día', 'Desde', 'Hasta', 'Horas', 'Estado', 'Comentario']];
+    for (const e of sorted) {
+        rows.push([
+            e.person,
+            e.date,
+            getDayName(e.date),
+            e.start,
+            e.end,
+            fmtHours(entryHours(e)),   // ya devuelve con coma decimal
+            e.done ? 'Hecha' : 'Pendiente',
+            e.comment || ''
+        ]);
+    }
+    const totalHours = entries.reduce((s, e) => s + entryHours(e), 0);
+    rows.push([]);
+    rows.push(['TOTAL', '', '', '', '', fmtHours(totalHours), '', '']);
+
+    const csv = rows.map(r => r.map(csvCell).join(';')).join('\r\n');
+
+    return {
+        csv,
+        filename: `HORAX_Resumen_${monthLabel}.csv`,
+        rangeStart: range.start,
+        rangeEnd: range.end
+    };
+}
+
+// Escapa una celda de CSV: si tiene ; " o saltos de línea, la envuelve en comillas
+function csvCell(v) {
+    const s = String(v == null ? '' : v);
+    if (/[;"\r\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+    return s;
+}
+
+// Fuerza la descarga de un archivo desde el navegador
+function downloadFile(filename, content, mime) {
+    // El \uFEFF es un "BOM" para que Excel abra bien los acentos
+    const blob = new Blob(['\uFEFF' + content], { type: mime + ';charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// Comparte el CSV con el menú nativo del celu (WhatsApp, mail, etc.)
+// Devuelve true si lo pudo compartir, false si no (para caer al download normal)
+async function tryShareCsv(info) {
+    if (!navigator.share || !navigator.canShare) return false;
+    try {
+        const file = new File(['\uFEFF' + info.csv], info.filename, { type: 'text/csv' });
+        if (!navigator.canShare({ files: [file] })) return false;
+        await navigator.share({
+            files: [file],
+            title: 'Resumen HORAX',
+            text: `Resumen de horas extras (${info.rangeStart} al ${info.rangeEnd})`
+        });
+        return true;
+    } catch (err) {
+        if (err && err.name === 'AbortError') return true; // el usuario canceló, no es error
+        console.warn('[HORAX] No se pudo compartir, se descarga como archivo:', err);
+        return false;
+    }
+}
+
+async function exportSummaryCsv() {
+    const info = buildSummaryCsv();
+    if (!info) { showToast('No hay datos para exportar'); return; }
+    // En el celu primero probamos el menú "compartir con…"
+    if (await tryShareCsv(info)) return;
+    // Si no, descarga directa
+    downloadFile(info.filename, info.csv, 'text/csv');
+    showToast('Descargando CSV…');
+}
+
+// Abre el diálogo de imprimir (que también permite "Guardar como PDF")
+function exportSummaryPdf() {
+    const entries = getEntriesForSummary();
+    if (entries.length === 0) { showToast('No hay datos para exportar'); return; }
+
+    const range = getSummaryRange(summaryYear, summaryMonth);
+    const monthName = new Date(summaryYear, summaryMonth, 1)
+        .toLocaleDateString('es-ES', { month: 'long' });
+    const monthLabel = monthName.charAt(0).toUpperCase() + monthName.slice(1) + ' ' + summaryYear;
+
+    // Agrupar igual que en el Resumen
+    const byPerson = new Map();
+    for (const e of entries) {
+        const p = byPerson.get(e.person) || { person: e.person, total: 0, done: 0 };
+        const h = entryHours(e);
+        p.total += h;
+        if (e.done) p.done += h;
+        byPerson.set(e.person, p);
+    }
+    const summary = Array.from(byPerson.values())
+        .sort((a, b) => b.total - a.total || a.person.localeCompare(b.person, 'es'));
+
+    const fmtDay = d => d.toLocaleDateString('es-ES', { day: 'numeric', month: 'long' });
+    let sumTotal = 0, sumDone = 0;
+    let rows = '';
+    for (const row of summary) {
+        sumTotal += row.total; sumDone += row.done;
+        rows += `<tr>
+            <td>${escapeHtml(row.person)}</td>
+            <td>${fmtHours(row.total)}</td>
+            <td>${fmtHours(row.done)}</td>
+            <td>${fmtHours(row.total - row.done)}</td>
+        </tr>`;
+    }
+
+    const now = new Date().toLocaleString('es-UY', {
+        timeZone: 'America/Montevideo',
+        day: '2-digit', month: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit'
+    });
+
+    const html = `
+        <div class="print-page">
+            <h1>HORAX</h1>
+            <h2>Resumen de horas extras</h2>
+            <p class="print-period">${monthLabel}</p>
+            <p class="print-locals">
+                ${escapeHtml(currentLocalName())} · Del ${fmtDay(range.startDate)} al ${fmtDay(range.endDate)}
+            </p>
+            <table>
+                <thead><tr>
+                    <th>Persona</th><th>Total</th><th>Hechas</th><th>Pendientes</th>
+                </tr></thead>
+                <tbody>
+                    ${rows}
+                    <tr class="total">
+                        <td>TOTAL</td>
+                        <td>${fmtHours(sumTotal)}</td>
+                        <td>${fmtHours(sumDone)}</td>
+                        <td>${fmtHours(sumTotal - sumDone)}</td>
+                    </tr>
+                </tbody>
+            </table>
+            <p class="print-foot">Generado el ${now}</p>
+        </div>`;
+
+    let area = document.getElementById('printArea');
+    if (!area) {
+        area = document.createElement('div');
+        area.id = 'printArea';
+        document.body.appendChild(area);
+    }
+    area.innerHTML = html;
+    window.print();
 }
 
 function renderAll() {
@@ -3174,6 +3353,12 @@ function init() {
     document.getElementById('auditModal').addEventListener('click', ev => {
         if (ev.target.id === 'auditModal') closeAuditModal();
     });
+
+    // ★ NUEVO (#5): botones para exportar el resumen (CSV / PDF)
+    const exportCsvBtn = document.getElementById('exportCsvBtn');
+    if (exportCsvBtn) exportCsvBtn.addEventListener('click', exportSummaryCsv);
+    const exportPdfBtn = document.getElementById('exportPdfBtn');
+    if (exportPdfBtn) exportPdfBtn.addEventListener('click', exportSummaryPdf);
 
     document.getElementById('editUserRole').addEventListener('change', updateEditUserLocalVisibility);
     document.getElementById('editUserSaveBtn').addEventListener('click', saveEditUserFromModal);

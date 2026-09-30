@@ -98,7 +98,17 @@
             <!-- TAB SUMMARY -->
             <div class="tab-content" id="tabSummary">
                 <h2 style="margin-bottom:16px;font-size:18px;">Resumen del mes</h2>
-                <div id="summaryContainer"></div>
+                                <div id="summaryContainer"></div>
+
+                <div class="export-row" id="exportRow" style="display:none;">
+                    <button class="btn-secondary" id="exportCsvBtn">
+                        <i class="fas fa-file-csv"></i> Excel (CSV)
+                    </button>
+                    <button class="btn-secondary" id="exportPdfBtn">
+                        <i class="fas fa-print"></i> PDF / Imprimir
+                    </button>
+                </div>
+
                 <p style="font-size:12px;color:var(--text-light);margin-top:8px;">
                     Los datos se cargan desde el PDF o una foto. Usá el tab "Importar" para cargarlos.
                 </p>
