@@ -101,7 +101,18 @@
             <!-- TAB SUMMARY -->
             <div class="tab-content" id="tabSummary">
                 <h2 style="margin-bottom:16px;font-size:18px;">Resumen del mes</h2>
-                                <div id="summaryContainer"></div>
+
+                <div class="summary-filter" id="summaryFilterBar" style="display:none;">
+                    <div class="summary-search">
+                        <i class="fas fa-magnifying-glass"></i>
+                        <input type="search" id="summarySearch" placeholder="Buscar persona..." autocomplete="off" aria-label="Buscar persona" />
+                    </div>
+                    <button type="button" class="filter-pill" id="hideDoneToggle" aria-pressed="false">
+                        <i class="fas fa-check"></i> Ocultar ya hechas
+                    </button>
+                </div>
+
+                <div id="summaryContainer"></div>
 
                 <div class="export-row" id="exportRow" style="display:none;">
                     <button class="btn-secondary" id="exportCsvBtn">
@@ -181,6 +192,9 @@
                 </div>
 
                 <h3 class="admin-subhead">Locales</h3>
+                <button type="button" class="btn-secondary admin-add-local-btn" id="newLocalBtn">
+                    <i class="fas fa-plus"></i> Nuevo local
+                </button>
                 <div id="adminLocalsList" class="admin-locals-list"></div>
             </div>
         </div>
@@ -307,6 +321,22 @@
             <div class="modal-actions">
                 <button class="btn-secondary" id="editUserCancelBtn">Cancelar</button>
                 <button class="btn-submit" id="editUserSaveBtn"><i class="fas fa-save"></i> Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="newLocalModal" class="modal-overlay" style="display:none;">
+        <div class="modal-card">
+            <h2><i class="fas fa-store" style="color:var(--primary-ink);margin-right:8px;"></i>Nuevo local</h2>
+            <p class="modal-hint">Ponele un nombre para reconocerlo fácil (ej: Centro, Costa).</p>
+            <div class="form-group">
+                <label>Nombre del local</label>
+                <input type="text" id="newLocalName" maxlength="40" placeholder="Ej: Punta Carretas" autocomplete="off" />
+            </div>
+            <p id="newLocalError" class="login-error" style="display:none;"></p>
+            <div class="modal-actions">
+                <button class="btn-secondary" id="newLocalCancelBtn">Cancelar</button>
+                <button class="btn-submit" id="newLocalSaveBtn"><i class="fas fa-check"></i> Crear</button>
             </div>
         </div>
     </div>

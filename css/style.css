@@ -513,3 +513,56 @@
     padding: 12px 10px;
 }
 .export-row .btn-secondary i { font-size: 15px; }
+
+/* ---- Buscador y filtros del Resumen ---- */
+.summary-filter { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.summary-search { position: relative; flex: 1; min-width: 0; }
+.summary-search i {
+    position: absolute; left: 13px; top: 50%; transform: translateY(-50%);
+    font-size: 14px; color: var(--text-light); pointer-events: none;
+}
+.summary-search input {
+    width: 100%; padding: 11px 12px 11px 36px; border: 1.5px solid var(--border);
+    border-radius: var(--radius-sm); font-size: 16px; font-family: inherit;
+    background: var(--card); color: var(--text); transition: 0.2s;
+    -webkit-appearance: none; appearance: none;
+}
+.summary-search input:focus {
+    outline: none; border-color: var(--primary-ink);
+    box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.15);
+}
+.filter-pill {
+    flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px;
+    padding: 10px 14px; border: 1.5px solid var(--border); border-radius: 999px;
+    background: var(--card); color: var(--text-secondary);
+    font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer;
+    white-space: nowrap; transition: 0.2s;
+}
+.filter-pill i { font-size: 12px; opacity: 0.4; }
+.filter-pill:active { transform: scale(0.96); }
+.filter-pill.active { background: var(--primary-bg); border-color: var(--primary-ink); color: var(--primary-ink); }
+.filter-pill.active i { opacity: 1; }
+
+/* ---- Gestión de locales (panel Admin) ---- */
+.admin-add-local-btn {
+    width: 100%; display: flex; align-items: center; justify-content: center;
+    gap: 8px; margin-bottom: 10px; padding: 11px 10px; font-size: 14px;
+}
+.admin-local-name { min-width: 0; }
+.admin-local-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.admin-local-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.admin-local-row.editing { border-color: var(--primary-ink); box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.12); }
+.local-rename-input {
+    flex: 1; min-width: 0; padding: 8px 10px; border: 1.5px solid var(--border);
+    border-radius: 8px; font-size: 16px; font-family: inherit;
+    background: var(--bg); color: var(--text);
+}
+.local-rename-input:focus { outline: none; border-color: var(--primary-ink); }
+.sd-ok { width: 32px; height: 32px; color: #059669; font-size: 15px; }
+.sd-ok:active { color: #047857; }
+.sd-cancel { width: 32px; height: 32px; color: var(--text-light); font-size: 15px; }
+.sd-cancel:active { color: var(--text-secondary); }
+/* Confirmación naranja (avisos) y saltos de línea en el mensaje */
+.btn-submit.btn-warn { background: #EA580C; color: #fff; }
+.btn-submit.btn-warn:active { background: #C2410C; }
+#confirmMessage { white-space: pre-line; }

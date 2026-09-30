@@ -152,7 +152,7 @@ function showNoLocalScreen(email, isConnError, customMsg) {
     const msg = customMsg ||
         (isConnError
             ? 'No se pudo conectar para revisar tu acceso. Probá de nuevo en un momento.'
-            : `Tu cuenta (${email || ''}) todavía no fue asignada a ningún local. Pedile a quien administra HORAX que te habilite el acceso.`);
+            : `Tu cuenta (${escapeHtml(email || '')}) todavía no fue asignada a ningún local. Pedile a quien administra HORAX que te habilite el acceso.`);
     card.innerHTML = `
         <div class="logo"><i class="fas fa-store-slash"></i></div>
         <h1>HORAX</h1>
@@ -204,9 +204,9 @@ async function showOnboardingScreen(user) {
 
     // Proponemos el nombre de la cuenta de Google, editable.
     const parts = (user.displayName || '').trim().split(/\s+/).filter(Boolean);
-    const guessFirst = (parts.shift() || '').replace(/"/g, '&quot;');
-    const guessLast = parts.join(' ').replace(/"/g, '&quot;');
-    const localOptions = locals.map(l => `<option value="${l.id}">${l.name}</option>`).join('');
+    const guessFirst = escapeHtml(parts.shift() || '');
+    const guessLast = parts.join(' ');
+    const localOptions = locals.map(l => `<option value="${escapeHtml(l.id)}">${escapeHtml(l.name)}</option>`).join('');
 
     card.innerHTML = `
         <div class="logo"><i class="fas fa-user-check"></i></div>
@@ -220,7 +220,7 @@ async function showOnboardingScreen(user) {
         </div>
         <div class="form-group">
             <label>Apellido <span class="label-opt">(opcional)</span></label>
-            <input type="text" id="onbLastName" placeholder="Ej: Pérez" value="${guessLast}" />
+            <input type="text" id="onbLastName" placeholder="Ej: Pérez" value="${escapeHtml(guessLast)}" />
         </div>
         ${isAdmin ? '' : `
         <div class="form-group">
@@ -319,7 +319,7 @@ function renderLocalBar() {
         if (header) header.insertAdjacentElement('afterend', bar);
     }
     const options = availableLocals
-        .map(l => `<option value="${l.id}" ${l.id === currentLocalId ? 'selected' : ''}>${l.name}</option>`)
+        .map(l => `<option value="${escapeHtml(l.id)}" ${l.id === currentLocalId ? 'selected' : ''}>${escapeHtml(l.name)}</option>`)
         .join('');
     bar.innerHTML = `<i class="fas fa-store"></i>
         <select id="localSelector" aria-label="Elegir local">${options}</select>`;
@@ -330,10 +330,10 @@ function renderLocalBar() {
 //  PANEL DE ADMINISTRACIÓN
 //  Solo lo ve currentRole === 'admin'. Permite ver/editar el rol y local de
 //  cada cuenta y borrar cuentas (encargadas u otras admins), sin entrar a
-//  la consola de Firebase. Los locales solo se ven, no se crean ni se
-//  borran desde acá: eso sigue siendo a mano en la consola de Firebase.
-//  Editar/borrar OTRA cuenta y listar la colección users requieren reglas
-//  de Firestore nuevas (ver el mensaje aparte con las reglas).
+//  la consola de Firebase. También permite crear, renombrar y borrar locales.
+//  Editar/borrar OTRA cuenta, listar la colección users y crear/editar/borrar
+//  locales requieren reglas de Firestore que autoricen al admin (ver el
+//  mensaje aparte con las reglas).
 //  Nota: borrar una cuenta acá solo borra su documento en Firestore (pierde
 //  rol y local al toque). No borra el login de Firebase Auth: si esa persona
 //  vuelve a entrar con esa cuenta, la app la trata como "primera vez" y le
@@ -450,6 +450,9 @@ async function deleteUserFromAdmin(uid) {
     }
 }
 
+// Local que se está renombrando ahora (null = ninguno)
+let editingLocalId = null;
+
 function renderAdminLocalsList() {
     const list = document.getElementById('adminLocalsList');
     if (!list) return;
@@ -457,11 +460,223 @@ function renderAdminLocalsList() {
         list.innerHTML = `<div class="empty-state"><i class="fas fa-store-slash"></i><p>No hay locales creados</p></div>`;
         return;
     }
+    // Si justo se refresca la lista mientras escribís un nombre, no se pierde lo escrito
+    const prevInput = document.getElementById('localRenameInput');
+    const draft = prevInput ? prevInput.value : null;
+
     const sorted = [...availableLocals].sort((a, b) => a.name.localeCompare(b.name, 'es'));
-    list.innerHTML = sorted.map(l => `
+    list.innerHTML = sorted.map(l => {
+        if (l.id === editingLocalId) {
+            return `
+        <div class="admin-local-row editing">
+            <input type="text" class="local-rename-input" id="localRenameInput" maxlength="40"
+                   value="${escapeHtml(draft !== null ? draft : l.name)}" aria-label="Nuevo nombre del local" autocomplete="off" />
+            <div class="admin-local-actions">
+                <button class="sd-btn sd-ok local-rename-ok" data-id="${escapeHtml(l.id)}" title="Guardar"><i class="fas fa-check"></i></button>
+                <button class="sd-btn sd-cancel local-rename-cancel" title="Cancelar"><i class="fas fa-xmark"></i></button>
+            </div>
+        </div>`;
+        }
+        return `
         <div class="admin-local-row">
-            <span class="admin-local-name"><i class="fas fa-store"></i> ${escapeHtml(l.name)}</span>
-        </div>`).join('');
+            <span class="admin-local-name"><i class="fas fa-store"></i> <span class="admin-local-text">${escapeHtml(l.name)}</span></span>
+            <div class="admin-local-actions">
+                <button class="sd-btn sd-edit local-edit-btn" data-id="${escapeHtml(l.id)}" title="Renombrar"><i class="fas fa-pen"></i></button>
+                <button class="sd-btn sd-delete local-delete-btn" data-id="${escapeHtml(l.id)}" title="Borrar local"><i class="fas fa-trash-alt"></i></button>
+            </div>
+        </div>`;
+    }).join('');
+
+    list.querySelectorAll('.local-edit-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            editingLocalId = btn.dataset.id;
+            renderAdminLocalsList();
+        });
+    });
+    list.querySelectorAll('.local-delete-btn').forEach(btn => {
+        btn.addEventListener('click', () => deleteLocal(btn.dataset.id));
+    });
+    const okBtn = list.querySelector('.local-rename-ok');
+    const cancelBtn = list.querySelector('.local-rename-cancel');
+    const input = document.getElementById('localRenameInput');
+    if (okBtn && input) {
+        const confirmRename = () => renameLocal(okBtn.dataset.id, input.value);
+        const cancelRename = () => { editingLocalId = null; renderAdminLocalsList(); };
+        okBtn.addEventListener('click', confirmRename);
+        cancelBtn.addEventListener('click', cancelRename);
+        input.addEventListener('keydown', ev => {
+            if (ev.key === 'Enter') { ev.preventDefault(); confirmRename(); }
+            else if (ev.key === 'Escape') { ev.preventDefault(); cancelRename(); }
+        });
+        if (draft === null) { input.focus(); input.select(); }
+    }
+}
+
+// ---- Crear / renombrar / borrar locales (solo admin) ----
+// Vuelve a leer la lista de locales de Firestore y refresca la barra, el
+// selector de local, la lista del panel y las etiquetas de local de las cuentas.
+async function reloadAvailableLocals() {
+    const snap = await localsCollectionRef().get();
+    availableLocals = snap.docs
+        .map(d => ({ id: d.id, name: (d.data() && d.data().name) || d.id }))
+        .sort((a, b) => a.name.localeCompare(b.name, 'es'));
+    renderLocalBar();
+    renderAdminLocalsList();
+    if (adminUsersLoaded) renderAdminUsersList();
+}
+
+function cleanLocalName(name) {
+    return String(name || '').trim().replace(/\s+/g, ' ');
+}
+function isDuplicateLocalName(name, exceptId) {
+    const n = normalizeText(name);
+    return availableLocals.some(l => l.id !== exceptId && normalizeText(l.name.trim()) === n);
+}
+function localErrorMessage(err, fallback) {
+    if (err && err.code === 'permission-denied') {
+        return 'Firebase no dejó hacer el cambio: faltan permisos de admin en las reglas de Firestore.';
+    }
+    return fallback;
+}
+
+async function createLocal(name) {
+    const clean = cleanLocalName(name);
+    if (!clean) return { ok: false, error: 'Escribí un nombre para el local.' };
+    if (clean.length > 40) return { ok: false, error: 'El nombre puede tener hasta 40 letras.' };
+    if (isDuplicateLocalName(clean, null)) return { ok: false, error: 'Ya hay un local con ese nombre.' };
+    try {
+        await localsCollectionRef().add({
+            name: clean,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        await reloadAvailableLocals();
+        showToast(`Local "${clean}" creado`);
+        return { ok: true };
+    } catch (err) {
+        console.error('[HORAX] Error creando el local:', err);
+        return { ok: false, error: localErrorMessage(err, 'No se pudo crear el local. Probá de nuevo.') };
+    }
+}
+
+async function renameLocal(id, newName) {
+    const local = availableLocals.find(l => l.id === id);
+    if (!local) return;
+    const clean = cleanLocalName(newName);
+    if (!clean) { showToast('Escribí un nombre para el local'); return; }
+    if (clean.length > 40) { showToast('El nombre puede tener hasta 40 letras'); return; }
+    if (clean === local.name) { editingLocalId = null; renderAdminLocalsList(); return; }
+    if (isDuplicateLocalName(clean, id)) { showToast('Ya hay un local con ese nombre'); return; }
+    try {
+        await localDocRef(id).update({ name: clean });
+        editingLocalId = null;
+        await reloadAvailableLocals();
+        showToast('Local renombrado');
+    } catch (err) {
+        console.error('[HORAX] Error renombrando el local:', err);
+        showToast(localErrorMessage(err, 'No se pudo renombrar el local'), 3500);
+    }
+}
+
+async function deleteLocal(id) {
+    const local = availableLocals.find(l => l.id === id);
+    if (!local) return;
+
+    // Siempre tiene que quedar al menos un local (si no, el admin se queda sin nada que mostrar)
+    if (availableLocals.length <= 1) {
+        await showConfirm({
+            title: 'No se puede borrar',
+            message: 'Tiene que quedar al menos un local. Creá otro antes de borrar este.',
+            okText: 'Entendido', hideCancel: true, warn: true
+        });
+        return;
+    }
+
+    // Cuentas asignadas a este local (se vuelve a leer para no usar datos viejos)
+    try {
+        const snap = await db.collection('users').get();
+        adminUsers = snap.docs.map(d => ({ uid: d.id, ...d.data() }));
+        adminUsersLoaded = true;
+    } catch (err) {
+        console.error('[HORAX] Error verificando las cuentas del local:', err);
+        showToast('No se pudo verificar qué cuentas usan este local', 3500);
+        return;
+    }
+    const assigned = adminUsers.filter(u => u.localId === id);
+    if (assigned.length > 0) {
+        const lines = assigned.map(u => {
+            const nm = (u.profile && [u.profile.firstName, u.profile.lastName].filter(Boolean).join(' ').trim()) || '';
+            return '• ' + (nm ? `${nm} (${u.email || 'sin mail'})` : (u.email || 'cuenta sin nombre'));
+        }).join('\n');
+        await showConfirm({
+            title: 'No se puede borrar',
+            message: `${local.name} todavía tiene cuentas asignadas:\n${lines}\n\nCambiales el local desde la lista de usuarios y probá de nuevo.`,
+            okText: 'Entendido', hideCancel: true, warn: true
+        });
+        return;
+    }
+
+    // Cuántas extras se perderían
+    let extrasTxt = '';
+    try {
+        const snap = await localDocRef(id).get();
+        const n = (snap.exists && snap.data() && Array.isArray(snap.data().entries)) ? snap.data().entries.length : 0;
+        extrasTxt = n > 0 ? ` y sus ${n} ${n === 1 ? 'extra cargada' : 'extras cargadas'}` : '';
+    } catch (_) { /* si no se puede leer, se borra igual con el aviso general */ }
+
+    const ok = await showConfirm({
+        title: '¿Borrar este local?',
+        message: `Se va a borrar ${local.name}${extrasTxt}. Esta acción no se puede deshacer.`,
+        okText: 'Borrar local',
+        cancelText: 'Cancelar',
+        warn: true
+    });
+    if (!ok) return;
+
+    try {
+        // Si es el local que se está mirando, pasamos a otro antes de borrarlo
+        if (id === currentLocalId) {
+            const other = availableLocals.find(l => l.id !== id);
+            if (other) switchLocal(other.id);
+        }
+        await localDocRef(id).delete();
+        if (editingLocalId === id) editingLocalId = null;
+        await reloadAvailableLocals();
+        showToast(`Local "${local.name}" borrado`);
+    } catch (err) {
+        console.error('[HORAX] Error borrando el local:', err);
+        showToast(localErrorMessage(err, 'No se pudo borrar el local'), 3500);
+        try { await reloadAvailableLocals(); } catch (_) {}
+    }
+}
+
+// ---- Modal "Nuevo local" ----
+function openNewLocalModal() {
+    const modal = document.getElementById('newLocalModal');
+    const input = document.getElementById('newLocalName');
+    const errorEl = document.getElementById('newLocalError');
+    if (!modal || !input) return;
+    input.value = '';
+    if (errorEl) errorEl.style.display = 'none';
+    modal.style.display = 'flex';
+    setTimeout(() => input.focus(), 50);
+}
+function closeNewLocalModal() {
+    const modal = document.getElementById('newLocalModal');
+    if (modal) modal.style.display = 'none';
+}
+async function saveNewLocalFromModal() {
+    const input = document.getElementById('newLocalName');
+    const errorEl = document.getElementById('newLocalError');
+    const saveBtn = document.getElementById('newLocalSaveBtn');
+    if (!input || !saveBtn) return;
+    saveBtn.disabled = true;
+    const res = await createLocal(input.value);
+    saveBtn.disabled = false;
+    if (!res.ok) {
+        if (errorEl) { errorEl.textContent = res.error; errorEl.style.display = 'block'; }
+        return;
+    }
+    closeNewLocalModal();
 }
 
 // ---- Editar el rol / local de una cuenta (con confirmación) ----
@@ -1130,7 +1345,7 @@ function renderDayDetail(dateStr) {
                     ${e.done ? '<i class="fas fa-check"></i>' : ''}
                 </div>
                 <div class="ot-info">
-                    <div class="ot-person" style="color:${color};">${e.person}</div>
+                    <div class="ot-person" style="color:${color};">${escapeHtml(e.person)}</div>
                     <div class="ot-time">${e.start} - ${e.end}</div>
                     ${e.comment ? `<div class="ot-comment"><i class="fas fa-comment-dots"></i> ${escapeHtml(e.comment)}</div>` : ''}
                 </div>
@@ -1271,6 +1486,13 @@ function goToToday() {
 const expandedPeople = new Set();
 let summaryRows = [];
 
+// Buscador y filtro del Resumen (se mantienen al cambiar de mes)
+let summaryFilter = '';
+let hideDone = false;
+function normalizeText(t) {
+    return String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
+
 function renderSummary() {
     summaryRows = [];
     const container = document.getElementById('summaryContainer');
@@ -1303,10 +1525,22 @@ function renderSummary() {
             if (e.done) p.done += h;
             byPerson.set(e.person, p);
         }
-        const summary = Array.from(byPerson.values())
+        const summaryAll = Array.from(byPerson.values())
             .sort((a, b) => b.total - a.total || a.person.localeCompare(b.person, 'es'));
 
+        // Filtros: texto buscado y "Ocultar ya hechas"
+        const q = normalizeText(summaryFilter.trim());
+        const filterOn = q !== '' || hideDone;
+        const summary = summaryAll.filter(row => {
+            if (q && !normalizeText(row.person).includes(q)) return false;
+            if (hideDone && row.items.every(e => e.done)) return false;
+            return true;
+        });
+
         summaryRows = summary;
+        if (summary.length === 0) {
+            html += `<div class="empty-state"><i class="fas fa-magnifying-glass"></i><p>No hay coincidencias</p></div>`;
+        } else {
         const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
         let sumTotal = 0, sumDone = 0;
         html += `<div class="summary-table"><table><thead><tr>
@@ -1318,12 +1552,12 @@ function renderSummary() {
             const idx = summary.indexOf(row);
             const open = expandedPeople.has(row.person);
             html += `<tr class="sum-row ${open ? 'open' : ''}" data-idx="${idx}">
-                <td class="person-name" style="color:${color};"><i class="fas fa-chevron-right sum-arrow"></i>${row.person}</td>
+                <td class="person-name" style="color:${color};"><i class="fas fa-chevron-right sum-arrow"></i>${escapeHtml(row.person)}</td>
                 <td>${fmtHours(row.total)}</td>
                 <td><span class="badge badge-done">${fmtHours(row.done)}</span></td>
                 <td><span class="badge badge-pending">${fmtHours(row.total - row.done)}</span></td>
             </tr>`;
-            const items = [...row.items].sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start));
+            const items = row.items.filter(e => !(hideDone && e.done)).sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start));
             html += `<tr class="sum-detail ${open ? 'open' : ''}" data-idx="${idx}"><td colspan="4"><div class="sum-detail-list">`;
             for (const e of items) {
                 const day = Number(e.date.slice(8, 10));
@@ -1340,14 +1574,19 @@ function renderSummary() {
             html += `</div></td></tr>`;
         }
         html += `<tr style="font-weight:700;">
-                <td>Total</td>
+                <td>${filterOn ? 'Total (filtrado)' : 'Total'}</td>
                 <td>${fmtHours(sumTotal)}</td>
                 <td>${fmtHours(sumDone)}</td>
                 <td>${fmtHours(sumTotal - sumDone)}</td>
             </tr>`;
         html += `</tbody></table></div>`;
+        }
     }
     container.innerHTML = html;
+
+    // El buscador solo se muestra si el período tiene extras
+    const filterBar = document.getElementById('summaryFilterBar');
+    if (filterBar) filterBar.style.display = entries.length > 0 ? 'flex' : 'none';
 
     // ★ NUEVO (#5): mostrar u ocultar los botones de exportar según si hay datos
     const exportRow = document.getElementById('exportRow');
@@ -1766,7 +2005,7 @@ function renderAll() {
     renderCalendar();
     renderSummary();
     const datalist = document.getElementById('personList');
-    if (datalist) datalist.innerHTML = getPeople().map(p => `<option value="${p}">`).join('');
+    if (datalist) datalist.innerHTML = getPeople().map(p => `<option value="${escapeHtml(p)}">`).join('');
     updateBadges();
     renderUndoImport();
 }
@@ -1785,7 +2024,7 @@ function showToast(msg, ms = 2400) {
 //  CONFIRMACIÓN "LINDA" (reemplaza los confirm() feos del navegador)
 // ============================================================
 // Uso: const ok = await showConfirm({ title, message, okText, cancelText, danger });
-function showConfirm({ title = '¿Estás seguro?', message = '', okText = 'Confirmar', cancelText = 'Cancelar', danger = false } = {}) {
+function showConfirm({ title = '¿Estás seguro?', message = '', okText = 'Confirmar', cancelText = 'Cancelar', danger = false, warn = false, hideCancel = false } = {}) {
     return new Promise(resolve => {
         const modal = document.getElementById('confirmModal');
         if (!modal) { resolve(window.confirm(message || title)); return; }
@@ -1802,6 +2041,8 @@ function showConfirm({ title = '¿Estás seguro?', message = '', okText = 'Confi
         okBtn.textContent = okText;
         cancelBtn.textContent = cancelText;
         okBtn.classList.toggle('btn-danger', danger);
+        okBtn.classList.toggle('btn-warn', warn);
+        cancelBtn.style.display = hideCancel ? 'none' : '';
         modal.style.display = 'flex';
 
         function cleanup(result) {
@@ -3183,7 +3424,7 @@ function showPdfPreview(entries) {
         <span><strong>${new Set(entries.map(e => e.date)).size}</strong> días</span>`;
 
     document.getElementById('pdfPeopleChips').innerHTML = peopleList
-        .map(p => `<span class="person-chip" style="background:${getEmployeeColor(p)};">${p}</span>`)
+        .map(p => `<span class="person-chip" style="background:${getEmployeeColor(p)};">${escapeHtml(p)}</span>`)
         .join('');
 
     const previewList = entries.slice(0, 40);
@@ -3191,7 +3432,7 @@ function showPdfPreview(entries) {
         previewList.map(e => {
             const c = getEmployeeColor(e.person);
             return `<span class="extra-chip" style="border-left-color:${c};">
-                ${formatDateDisplay(e.date)} · ${e.person} · ${e.start}-${e.end}${e.auto ? ' · (+8 hs)' : ''}</span>`;
+                ${formatDateDisplay(e.date)} · ${escapeHtml(e.person)} · ${e.start}-${e.end}${e.auto ? ' · (+8 hs)' : ''}</span>`;
         }).join('') +
         (entries.length > 40 ? `<span class="extra-chip">… y ${entries.length - 40} más</span>` : '');
 
@@ -3510,9 +3751,47 @@ function init() {
     const exportPdfBtn = document.getElementById('exportPdfBtn');
     if (exportPdfBtn) exportPdfBtn.addEventListener('click', exportSummaryPdf);
 
+    // Buscador y filtro "Ocultar ya hechas" del Resumen (se filtra en vivo)
+    const summarySearch = document.getElementById('summarySearch');
+    if (summarySearch) {
+        summarySearch.value = summaryFilter;
+        summarySearch.addEventListener('input', () => {
+            summaryFilter = summarySearch.value;
+            renderSummary();
+        });
+    }
+    const hideDoneToggle = document.getElementById('hideDoneToggle');
+    if (hideDoneToggle) {
+        hideDoneToggle.classList.toggle('active', hideDone);
+        hideDoneToggle.setAttribute('aria-pressed', String(hideDone));
+        hideDoneToggle.addEventListener('click', () => {
+            hideDone = !hideDone;
+            hideDoneToggle.classList.toggle('active', hideDone);
+            hideDoneToggle.setAttribute('aria-pressed', String(hideDone));
+            renderSummary();
+        });
+    }
+
     document.getElementById('editUserRole').addEventListener('change', updateEditUserLocalVisibility);
     document.getElementById('editUserSaveBtn').addEventListener('click', saveEditUserFromModal);
     document.getElementById('editUserCancelBtn').addEventListener('click', closeEditUserModal);
+
+    // Admin: crear locales
+    const newLocalBtn = document.getElementById('newLocalBtn');
+    if (newLocalBtn) newLocalBtn.addEventListener('click', openNewLocalModal);
+    const newLocalCancelBtn = document.getElementById('newLocalCancelBtn');
+    if (newLocalCancelBtn) newLocalCancelBtn.addEventListener('click', closeNewLocalModal);
+    const newLocalSaveBtn = document.getElementById('newLocalSaveBtn');
+    if (newLocalSaveBtn) newLocalSaveBtn.addEventListener('click', saveNewLocalFromModal);
+    const newLocalName = document.getElementById('newLocalName');
+    if (newLocalName) newLocalName.addEventListener('keydown', ev => {
+        if (ev.key === 'Enter') { ev.preventDefault(); saveNewLocalFromModal(); }
+        else if (ev.key === 'Escape') closeNewLocalModal();
+    });
+    const newLocalModal = document.getElementById('newLocalModal');
+    if (newLocalModal) newLocalModal.addEventListener('click', ev => {
+        if (ev.target.id === 'newLocalModal') closeNewLocalModal();
+    });
     document.getElementById('editUserModal').addEventListener('click', ev => {
         if (ev.target.id === 'editUserModal') closeEditUserModal();
     });
