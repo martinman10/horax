@@ -823,19 +823,11 @@ const MONTH_MAP = {
 
 // ============================================================
 //  IMPORTAR DESDE FOTO (OCR) — configuración
-//  A diferencia del PDF (que trae la posición exacta de cada
-//  letra), de una foto hay que "leer" el texto con OCR. Estas
-//  constantes calibran esa lectura para que las reglas de columnas/
-//  filas/colores (pensadas para el PDF) también sirvan con fotos
-//  de distinta resolución.
 // ============================================================
 const IMAGE_OCR_LANG = 'spa';
-const IMAGE_MAX_DIMENSION = 2200; // baja fotos gigantes (más rápido, sin perder precisión real)
-const IMAGE_REFERENCE_TEXT_HEIGHT = 8; // alto de letra "de referencia", en la misma escala que usa el PDF
+const IMAGE_MAX_DIMENSION = 2200;
+const IMAGE_REFERENCE_TEXT_HEIGHT = 8;
 
-// Rango horario real de la planilla (todas las semanas van de 5:00 a 23:00).
-// Se usa tanto para el reparto parejo "de última" como para descartar anclas
-// de hora que quedaron fuera de ese rango por un error de OCR.
 const SCHEDULE_START_HOUR = 5;
 const SCHEDULE_END_HOUR = 23;
 
@@ -857,28 +849,12 @@ function saveData() {
         });
     updateBadges();
 }
-// ============================================================
-//  HISTORIAL DE AUDITORÍA
-//  Quién agregó, editó o borró una extra, y cuándo.
-//
-//  Se guarda en locals/{localId}/auditLog/{autoId} — una SUBCOLECCIÓN,
-//  no un array paralelo dentro del documento del local. Motivo: `entries`
-//  ya vive como array en ese documento y cada guardado (saveData) reescribe
-//  el array completo; si el auditLog fuera otro array en el mismo doc,
-//  cada nuevo evento obligaría a reescribir TODO el historial acumulado,
-//  y ese documento (que tiene un límite de 1 MiB en Firestore) crecería
-//  para siempre con la actividad, sin forma de acotarlo. Como subcolección,
-//  cada evento es un documento chico e independiente: se agrega con `.add()`
-//  sin tocar `entries` ni el resto del historial, no hay límite de tamaño
-//  práctico, y se puede paginar/ordenar por fecha con una query normal.
+
 function auditActor() {
     const name = profileDisplayName() || (currentUser && currentUser.displayName) || 'Alguien';
     const email = (currentUser && currentUser.email) || '';
     return { name, email };
 }
-// action: 'create' | 'update' | 'delete'. summary: texto legible para mostrar
-// en el historial. entryId: id de la extra afectada (o null para acciones
-// masivas como importar/deshacer/vaciar todo).
 function logAudit(action, summary, entryId) {
     if (!currentLocalId) return;
     const actor = auditActor();
@@ -947,7 +923,6 @@ function getDayStatus(dateStr) {
     if (entries.length === 0) return 'none';
     return entries.every(e => e.done) ? 'done' : 'pending';
 }
-// Evita que un comentario con < > & rompa el HTML del listado del día
 function escapeHtml(str) {
     return String(str)
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -1031,7 +1006,7 @@ function renderCalendar() {
     const daysInPrev = new Date(currentYear, currentMonth, 0).getDate();
     const todayStr = formatDate(hoyDate());
     const datesWithOT = getDatesWithOvertime(currentYear, currentMonth);
-    const allOTDates = new Set(overtimeData.map(e => e.date)); // para los días grises de meses vecinos
+    const allOTDates = new Set(overtimeData.map(e => e.date));
     const otherCls = ds => {
         if (!allOTDates.has(ds)) return 'day-cell other-month';
         const st = getDayStatus(ds);
@@ -1078,7 +1053,6 @@ function renderCalendar() {
             const date = el.dataset.date;
             if (!date) return;
             selectedDate = date;
-            // tocar un día gris te lleva a ese mes
             if (el.classList.contains('other-month')) {
                 const [yy, mm] = date.split('-').map(Number);
                 currentYear = yy; currentMonth = mm - 1;
@@ -1170,18 +1144,12 @@ function renderDayDetail(dateStr) {
 
 // ============================================================
 //  RESUMEN: período de cierre del día 26 del mes anterior al día 25
-//  (ej. Septiembre = 26 ago → 25 sep; el día 25 cuenta en el mes que cierra)
 // ============================================================
 const CIERRE_DIA = 25;
 
-// ★ El Resumen tiene su PROPIO período, independiente del mes del Calendario.
-// Así, a partir del día 26 el Resumen abre en el período que está corriendo
-// (ej. hoy 29 sep → "Octubre" = 26 sep al 25 oct) mientras el Calendario sigue
-// mostrando el mes real, donde se ven las extras de hoy.
 let summaryYear = hoyMVD().year;
 let summaryMonth = hoyMVD().month;
 
-// Período de cierre en el que cae HOY
 function currentCyclePeriod() {
     const h = hoyMVD();
     if (h.day > CIERRE_DIA) return h.month === 11 ? { year: h.year + 1, month: 0 } : { year: h.year, month: h.month + 1 };
@@ -1194,7 +1162,6 @@ function goToCurrentPeriod() {
     updateBadges();
 }
 
-// A qué mes de cierre pertenece una fecha AAAA-MM-DD
 function getClosingPeriodOf(dateStr) {
     const [y, m, d] = dateStr.split('-').map(Number);
     let year = y, month = m - 1;
@@ -1225,12 +1192,10 @@ function shiftSummary(delta) {
     updateBadges();
 }
 
-// Volver directo al mes actual (según Montevideo), sin importar cuánto te hayas alejado
 function isCurrentMonthShown() {
     const h = hoyMVD();
     return currentYear === h.year && currentMonth === h.month;
 }
-// Barra "Volver al mes actual": solo aparece cuando NO estás en el mes actual
 function todayBarHtml() {
     if (isCurrentMonthShown()) return '';
     const h = hoyMVD();
@@ -1239,7 +1204,6 @@ function todayBarHtml() {
     return `<button type="button" class="today-bar" title="Volver al mes actual">
         <i class="fas fa-rotate-left"></i> Volver al mes actual <strong>(${label})</strong></button>`;
 }
-// Barra del Resumen: aparece cuando NO estás viendo el período en curso
 function summaryTodayBarHtml() {
     const p = currentCyclePeriod();
     if (summaryYear === p.year && summaryMonth === p.month) return '';
@@ -1248,7 +1212,6 @@ function summaryTodayBarHtml() {
     return `<button type="button" class="today-bar" data-scope="summary" title="Volver al período actual">
         <i class="fas fa-rotate-left"></i> Volver al período actual <strong>(${label})</strong></button>`;
 }
-// En el Calendario la barra vive en un contenedor que se crea debajo del selector de mes
 function renderTodayBarCalendar() {
     const nav = document.getElementById('monthLabel').closest('.month-nav');
     let box = document.getElementById('todayBarCal');
@@ -1267,7 +1230,6 @@ function goToToday() {
     renderCalendar();
 }
 
-// Personas desplegadas en el Resumen
 const expandedPeople = new Set();
 let summaryRows = [];
 
@@ -1349,11 +1311,9 @@ function renderSummary() {
     }
     container.innerHTML = html;
 
-    // ★ NUEVO (#5): mostrar u ocultar los botones de exportar según si hay datos
     const exportRow = document.getElementById('exportRow');
     if (exportRow) exportRow.style.display = entries.length > 0 ? 'flex' : 'none';
 
-    // Tocar una persona para ver / ocultar su detalle
     container.querySelectorAll('.sum-row').forEach(tr => {
         tr.addEventListener('click', () => {
             const idx = tr.dataset.idx;
@@ -1365,7 +1325,6 @@ function renderSummary() {
         });
     });
 
-    // Marcar hecha / editar desde el detalle del Resumen
     container.querySelectorAll('.sd-check').forEach(el => {
         el.addEventListener('click', ev => {
             ev.stopPropagation();
@@ -1383,9 +1342,6 @@ function renderSummary() {
     document.getElementById('summaryNext').addEventListener('click', () => shiftSummary(1));
 }
 
-// ---- Ver historial de auditoría (solo lectura: no hay ningún botón de
-// editar/borrar en este modal, y la app nunca escribe en auditLog salvo
-// desde logAudit) ----
 const AUDIT_ICON = { create: 'fa-plus', update: 'fa-pen', delete: 'fa-trash-alt' };
 function openAuditModal() {
     const modal = document.getElementById('auditModal');
@@ -1438,7 +1394,7 @@ function updateBadges() {
 }
 
 // ============================================================
-//  ★ NUEVO (#5): EXPORTAR RESUMEN (CSV / PDF)
+//  ★ EXPORTAR RESUMEN (CSV / PDF)
 // ============================================================
 
 // Arma el CSV del período del Resumen que se está viendo
@@ -1451,7 +1407,6 @@ function buildSummaryCsv() {
         .toLocaleDateString('es-ES', { month: 'long' });
     const monthLabel = monthName.charAt(0).toUpperCase() + monthName.slice(1) + '_' + summaryYear;
 
-    // Ordenado por persona y después por fecha/hora
     const sorted = [...entries].sort((a, b) =>
         a.person.localeCompare(b.person, 'es') ||
         a.date.localeCompare(b.date) ||
@@ -1466,7 +1421,7 @@ function buildSummaryCsv() {
             getDayName(e.date),
             e.start,
             e.end,
-            fmtHours(entryHours(e)),   // ya devuelve con coma decimal
+            fmtHours(entryHours(e)),
             e.done ? 'Hecha' : 'Pendiente',
             e.comment || ''
         ]);
@@ -1485,16 +1440,13 @@ function buildSummaryCsv() {
     };
 }
 
-// Escapa una celda de CSV: si tiene ; " o saltos de línea, la envuelve en comillas
 function csvCell(v) {
     const s = String(v == null ? '' : v);
     if (/[;"\r\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
     return s;
 }
 
-// Fuerza la descarga de un archivo desde el navegador
 function downloadFile(filename, content, mime) {
-    // El \uFEFF es un "BOM" para que Excel abra bien los acentos
     const blob = new Blob(['\uFEFF' + content], { type: mime + ';charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1506,8 +1458,6 @@ function downloadFile(filename, content, mime) {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-// Comparte el CSV con el menú nativo del celu (WhatsApp, mail, etc.)
-// Devuelve true si lo pudo compartir, false si no (para caer al download normal)
 async function tryShareCsv(info) {
     if (!navigator.share || !navigator.canShare) return false;
     try {
@@ -1520,7 +1470,7 @@ async function tryShareCsv(info) {
         });
         return true;
     } catch (err) {
-        if (err && err.name === 'AbortError') return true; // el usuario canceló, no es error
+        if (err && err.name === 'AbortError') return true;
         console.warn('[HORAX] No se pudo compartir, se descarga como archivo:', err);
         return false;
     }
@@ -1529,24 +1479,26 @@ async function tryShareCsv(info) {
 async function exportSummaryCsv() {
     const info = buildSummaryCsv();
     if (!info) { showToast('No hay datos para exportar'); return; }
-    // En el celu primero probamos el menú "compartir con…"
     if (await tryShareCsv(info)) return;
-    // Si no, descarga directa
     downloadFile(info.filename, info.csv, 'text/csv');
     showToast('Descargando CSV…');
 }
 
-// Abre el diálogo de imprimir (que también permite "Guardar como PDF")
-function exportSummaryPdf() {
+// ★ NUEVO: genera el PDF con html2pdf (con colores, sin pasar por "imprimir")
+async function exportSummaryPdf() {
     const entries = getEntriesForSummary();
     if (entries.length === 0) { showToast('No hay datos para exportar'); return; }
+
+    if (typeof html2pdf === 'undefined') {
+        showToast('El generador de PDF no cargó. Revisá tu conexión e intentá de nuevo.', 4000);
+        return;
+    }
 
     const range = getSummaryRange(summaryYear, summaryMonth);
     const monthName = new Date(summaryYear, summaryMonth, 1)
         .toLocaleDateString('es-ES', { month: 'long' });
     const monthLabel = monthName.charAt(0).toUpperCase() + monthName.slice(1) + ' ' + summaryYear;
 
-    // Agrupar igual que en el Resumen
     const byPerson = new Map();
     for (const e of entries) {
         const p = byPerson.get(e.person) || { person: e.person, total: 0, done: 0 };
@@ -1564,10 +1516,14 @@ function exportSummaryPdf() {
     for (const row of summary) {
         sumTotal += row.total; sumDone += row.done;
         rows += `<tr>
-            <td>${escapeHtml(row.person)}</td>
-            <td>${fmtHours(row.total)}</td>
-            <td>${fmtHours(row.done)}</td>
-            <td>${fmtHours(row.total - row.done)}</td>
+            <td style="padding:10px 12px;border-bottom:1px solid #F3F4F6;">${escapeHtml(row.person)}</td>
+            <td style="padding:10px 12px;border-bottom:1px solid #F3F4F6;text-align:right;font-weight:600;">${fmtHours(row.total)}</td>
+            <td style="padding:10px 12px;border-bottom:1px solid #F3F4F6;text-align:right;">
+                <span style="display:inline-block;padding:2px 10px;border-radius:20px;background:#D1FAE5;color:#065F46;font-size:12px;font-weight:500;">${fmtHours(row.done)}</span>
+            </td>
+            <td style="padding:10px 12px;border-bottom:1px solid #F3F4F6;text-align:right;">
+                <span style="display:inline-block;padding:2px 10px;border-radius:20px;background:#FEF3C7;color:#92400E;font-size:12px;font-weight:500;">${fmtHours(row.total - row.done)}</span>
+            </td>
         </tr>`;
     }
 
@@ -1577,39 +1533,108 @@ function exportSummaryPdf() {
         hour: '2-digit', minute: '2-digit'
     });
 
-    const html = `
-        <div class="print-page">
-            <h1>HORAX</h1>
-            <h2>Resumen de horas extras</h2>
-            <p class="print-period">${monthLabel}</p>
-            <p class="print-locals">
-                ${escapeHtml(currentLocalName())} · Del ${fmtDay(range.startDate)} al ${fmtDay(range.endDate)}
-            </p>
-            <table>
-                <thead><tr>
-                    <th>Persona</th><th>Total</th><th>Hechas</th><th>Pendientes</th>
-                </tr></thead>
-                <tbody>
-                    ${rows}
-                    <tr class="total">
-                        <td>TOTAL</td>
-                        <td>${fmtHours(sumTotal)}</td>
-                        <td>${fmtHours(sumDone)}</td>
-                        <td>${fmtHours(sumTotal - sumDone)}</td>
-                    </tr>
-                </tbody>
-            </table>
-            <p class="print-foot">Generado el ${now}</p>
+    const wrap = document.createElement('div');
+    wrap.style.position = 'fixed';
+    wrap.style.left = '-99999px';
+    wrap.style.top = '0';
+    wrap.style.width = '720px';
+    wrap.style.background = '#FFFFFF';
+    wrap.style.fontFamily = "'Inter', -apple-system, BlinkMacSystemFont, sans-serif";
+    wrap.style.color = '#1A1A2E';
+    wrap.style.padding = '28px';
+    wrap.style.boxSizing = 'border-box';
+
+    wrap.innerHTML = `
+        <div style="background:linear-gradient(135deg,#6C63FF 0%,#8B83FF 100%);color:#FFFFFF;padding:22px 26px;border-radius:16px;margin-bottom:22px;">
+            <div style="font-size:26px;font-weight:700;letter-spacing:1.5px;">HORAX</div>
+            <div style="font-size:13px;opacity:0.92;margin-top:3px;letter-spacing:0.3px;">Resumen de horas extras</div>
+        </div>
+
+        <div style="margin-bottom:20px;">
+            <div style="font-size:18px;font-weight:700;color:#1A1A2E;">${monthLabel}</div>
+            <div style="font-size:12.5px;color:#6B7280;margin-top:4px;">
+                <i style="font-style:normal;">${escapeHtml(currentLocalName())}</i> ·
+                Del ${fmtDay(range.startDate)} al ${fmtDay(range.endDate)}
+            </div>
+        </div>
+
+        <table style="width:100%;border-collapse:collapse;font-size:13.5px;">
+            <thead>
+                <tr style="background:#F0EFFF;">
+                    <th style="text-align:left;padding:11px 12px;font-weight:600;color:#6C63FF;border-bottom:2px solid #E5E7EB;">Persona</th>
+                    <th style="text-align:right;padding:11px 12px;font-weight:600;color:#6C63FF;border-bottom:2px solid #E5E7EB;">Total</th>
+                    <th style="text-align:right;padding:11px 12px;font-weight:600;color:#6C63FF;border-bottom:2px solid #E5E7EB;">Hechas</th>
+                    <th style="text-align:right;padding:11px 12px;font-weight:600;color:#6C63FF;border-bottom:2px solid #E5E7EB;">Pendientes</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${rows}
+                <tr style="background:#F0EFFF;">
+                    <td style="padding:13px 12px;font-weight:700;color:#6C63FF;border-top:2px solid #6C63FF;">TOTAL</td>
+                    <td style="padding:13px 12px;font-weight:700;text-align:right;color:#6C63FF;border-top:2px solid #6C63FF;">${fmtHours(sumTotal)}</td>
+                    <td style="padding:13px 12px;font-weight:700;text-align:right;color:#6C63FF;border-top:2px solid #6C63FF;">${fmtHours(sumDone)}</td>
+                    <td style="padding:13px 12px;font-weight:700;text-align:right;color:#6C63FF;border-top:2px solid #6C63FF;">${fmtHours(sumTotal - sumDone)}</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div style="margin-top:26px;font-size:10.5px;color:#9CA3AF;text-align:right;">
+            Generado el ${now}
         </div>`;
 
-    let area = document.getElementById('printArea');
-    if (!area) {
-        area = document.createElement('div');
-        area.id = 'printArea';
-        document.body.appendChild(area);
+    document.body.appendChild(wrap);
+
+    const filename = `HORAX_Resumen_${monthLabel.replace(/\s+/g, '_')}.pdf`;
+    showToast('Generando PDF…', 2000);
+
+    try {
+        const opt = {
+            margin: [8, 8, 8, 8],
+            filename: filename,
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: { scale: 2, useCORS: true, backgroundColor: '#FFFFFF', logging: false },
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        };
+
+        const blob = await html2pdf().set(opt).from(wrap).outputPdf('blob');
+
+        // En el celu primero probamos el menú "compartir con…"
+        let shared = false;
+        if (navigator.share && navigator.canShare) {
+            try {
+                const file = new File([blob], filename, { type: 'application/pdf' });
+                if (navigator.canShare({ files: [file] })) {
+                    await navigator.share({
+                        files: [file],
+                        title: 'Resumen HORAX',
+                        text: `Resumen de horas extras (${range.start} al ${range.end})`
+                    });
+                    shared = true;
+                }
+            } catch (shareErr) {
+                if (shareErr && shareErr.name === 'AbortError') shared = true;
+                else console.warn('[HORAX] No se pudo compartir el PDF, se descarga:', shareErr);
+            }
+        }
+
+        // Si no se compartió, se descarga como archivo
+        if (!shared) {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+            showToast('PDF descargado');
+        }
+    } catch (err) {
+        console.error('[HORAX] Error generando el PDF:', err);
+        showToast('No se pudo generar el PDF');
+    } finally {
+        if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
     }
-    area.innerHTML = html;
-    window.print();
 }
 
 function renderAll() {
@@ -1631,10 +1656,6 @@ function showToast(msg, ms = 2400) {
     toastTimeout = setTimeout(() => el.classList.remove('show'), ms);
 }
 
-// ============================================================
-//  CONFIRMACIÓN "LINDA" (reemplaza los confirm() feos del navegador)
-// ============================================================
-// Uso: const ok = await showConfirm({ title, message, okText, cancelText, danger });
 function showConfirm({ title = '¿Estás seguro?', message = '', okText = 'Confirmar', cancelText = 'Cancelar', danger = false } = {}) {
     return new Promise(resolve => {
         const modal = document.getElementById('confirmModal');
@@ -1684,8 +1705,6 @@ function switchTab(tabId) {
     if (tabId === 'tabCalendar') renderCalendar();
     if (tabId === 'tabAdmin') renderAdminPanel();
     if (tabId === 'tabAdd') {
-        // Si venís de un día elegido en el Calendario, "Agregar" arranca en ese
-        // día en vez de siempre en hoy.
         const addDate = document.getElementById('addDate');
         if (addDate) addDate.value = selectedDate || formatDate(hoyDate());
     }
@@ -1693,7 +1712,7 @@ function switchTab(tabId) {
 }
 
 // ============================================================
-//  UTILIDADES DE PDF
+//  UTILIDADES DE PDF (importar)
 // ============================================================
 function initPdfJs() {
     if (typeof pdfjsLib === 'undefined') {
@@ -1718,29 +1737,8 @@ function clusterByY(items, tolerance) {
     return clusters;
 }
 
-// ============================================================
-//  ★ CORREGIDO: mergeTextFragments
-//  Antes: un único umbral horizontal de 4px pegaba nombres de
-//  personas DISTINTAS que estaban cerca en la misma celda
-//  (ej. "MARTI" + "GIM BEN" → "MARTI GIM" inventado, o directamente
-//  se comía a una de las dos personas).
-//  Ahora: paso 1 fusiona horizontal SOLO fragmentos casi pegados
-//  (umbral 1px, para reconstruir un nombre partido en pedazos, no
-//  para unir dos nombres distintos); paso 2 fusiona verticalmente
-//  nombres que el PDF partió en 2 líneas dentro de la misma celda
-//  (ej. "ROM" arriba y "LEO" justo debajo → "ROM LEO").
-// ============================================================
-// ★ CORREGIDO: los umbrales (en píxeles) estaban fijos y calibrados SOLO
-// para el espacio de coordenadas del PDF (puntos de PDF, valores chicos:
-// ~4-8px de alto de letra). Una foto se procesa en un canvas de hasta
-// IMAGE_MAX_DIMENSION px, donde la misma letra mide 20-40px o más — con
-// los umbrales viejos, la fusión de fragmentos partidos por el OCR
-// prácticamente nunca se activaba en fotos (todo quedaba 3-5x más chico
-// de lo necesario). Ahora los umbrales se escalan con geomScale, igual
-// que el resto de los "números mágicos" del parser.
 function mergeTextFragments(items, geomScale) {
     geomScale = geomScale || 1;
-    // Paso 1: fusión horizontal, SOLO fragmentos casi pegados
     const yBucket = 4 * geomScale;
     const linesMap = new Map();
     for (const it of items) {
@@ -1765,8 +1763,6 @@ function mergeTextFragments(items, geomScale) {
         if (current) merged.push(current);
     }
 
-    // Paso 2: fusión vertical, para nombres partidos en 2 líneas
-    // dentro de la misma celda (ej. "ROM" arriba y "LEO" debajo)
     merged.sort((a, b) => a.y - b.y || a.x - b.x);
     const used = new Array(merged.length).fill(false);
     const out = [];
@@ -1778,15 +1774,11 @@ function mergeTextFragments(items, geomScale) {
             if (used[j]) continue;
             const cand = merged[j];
             const dy = cand.y - cur.y;
-            if (dy < dyMin) continue;   // misma línea, ignorar
-            if (dy > dyMax) break;      // ya muy lejos verticalmente, cortar
+            if (dy < dyMin) continue;
+            if (dy > dyMax) break;
             const dx = Math.abs(cand.x - cur.x);
-            // ★ CORREGIDO: si el texto es EXACTAMENTE igual al de arriba (ej. "CANDE"
-            // repetido en cada fila de un bloque de varias horas), no es un nombre
-            // partido en 2 líneas — es la MISMA persona en la fila de abajo. Fusionarlos
-            // los convertía en 1 sola celda gigante y se perdían las horas de más abajo.
             const sameText = cand.str.trim().toUpperCase() === cur.str.trim().toUpperCase();
-            if (dx <= dxMax && !sameText) {          // misma columna aprox. = 2da línea del mismo nombre
+            if (dx <= dxMax && !sameText) {
                 cur = {
                     str: cur.str + ' ' + cand.str,
                     x: Math.min(cur.x, cand.x),
@@ -1843,28 +1835,6 @@ function extractPersonName(text) {
     return name;
 }
 
-// ============================================================
-//  ★ NUEVO: CALIBRACIÓN DE FILAS POR HORAS "SUELTAS" (SOLO FOTOS)
-//  Cuando una foto llega recortada y no trae la columna de "5:00 - 6:00 /
-//  6:00 - 7:00 / ...", el único respaldo que había era repartir las horas
-//  parejo de 5 a 23 en toda la altura de la imagen. El problema: si la
-//  franja visible no arranca justo a las 5:00 (por cómo quedó recortada o
-//  diseñada la captura), ese reparto se corre y las celdas caen en la fila
-//  equivocada — o en ninguna — aunque el nombre y el color se hayan leído
-//  perfecto.
-//  Muchas fotos, sin embargo, ya traen la hora exacta pegada a algunos
-//  nombres (ej. "PILAR 14:15", "CAMI O 22:15", "MARTI 14: 30") para marcar
-//  que ese turno no arranca/termina en una hora redonda. Esas horas son
-//  datos reales de la foto, no una estimación: sirven como "anclas"
-//  (posición Y en la imagen ↔ hora real) para calcular la escala real de
-//  esta captura puntual (píxeles por hora) y ubicar el resto de las filas
-//  con mucha más precisión que un reparto uniforme "a ciegas".
-// ============================================================
-
-// Si el texto (ya fusionado por mergeTextFragments) termina en "H:MM" o
-// "H: MM" (el OCR a veces deja un espacio antes de los minutos), devuelve
-// esa hora como número decimal (14:30 → 14.5). Si no hay hora pegada al
-// final, o no cae en el horario real de la planilla, devuelve null.
 function extractTrailingTime(str) {
     const m = String(str).trim().match(/(\d{1,2})\s*:\s*(\d{2})\s*$/);
     if (!m) return null;
@@ -1875,7 +1845,6 @@ function extractTrailingTime(str) {
     return h + mm / 60;
 }
 
-// Regresión lineal simple (mínimos cuadrados): hora = a·y + b
 function linearRegression(points) {
     const n = points.length;
     if (n < 2) return null;
@@ -1885,17 +1854,12 @@ function linearRegression(points) {
         sumYH += p.y * p.hour; sumYY += p.y * p.y;
     }
     const denom = n * sumYY - sumY * sumY;
-    if (Math.abs(denom) < 1e-6) return null; // todas las anclas casi en la misma fila: no hay escala
+    if (Math.abs(denom) < 1e-6) return null;
     const a = (n * sumYH - sumY * sumH) / denom;
     const b = (sumH - a * sumY) / n;
     return { a, b };
 }
 
-// Busca, dentro del área de la grilla (no en encabezados), palabras que
-// tengan nombre + hora pegada (ej. "PILAR 14:15") y arma la lista de anclas
-// {y, hour}. Solo se usan como ancla las que también contienen un nombre de
-// persona válido, para no confundir una hora suelta de una nota o de un
-// encabezado con una celda real.
 function collectTimeAnchors(words, colRanges, top, bottom) {
     const anchors = [];
     for (const w of words) {
@@ -1909,16 +1873,12 @@ function collectTimeAnchors(words, colRanges, top, bottom) {
         if (!inGrid) continue;
         const hour = extractTrailingTime(w.str);
         if (hour == null) continue;
-        if (!extractPersonName(w.str)) continue; // "14:15" sola, sin nombre, no sirve de ancla
+        if (!extractPersonName(w.str)) continue;
         anchors.push({ y: w.y, hour });
     }
     return anchors;
 }
 
-// A partir de las anclas, calcula la recta (y → hora) y genera filas de 1h
-// (mismo formato que las filas leídas de la columna de horarios) cubriendo
-// toda el área visible. Si no hay anclas suficientes o confiables, devuelve
-// null y el llamador cae al reparto parejo de siempre.
 function buildCalibratedRowsFromEmbeddedTimes(words, colRanges, top, bottom, geomScale) {
     let pts = collectTimeAnchors(words, colRanges, top, bottom);
     if (pts.length < 2) return null;
@@ -1926,8 +1886,6 @@ function buildCalibratedRowsFromEmbeddedTimes(words, colRanges, top, bottom, geo
     let reg = linearRegression(pts);
     if (!reg) return null;
 
-    // Limpieza: saca anclas que no encajan en la recta (probable error de
-    // OCR leyendo una hora que no es), y recalcula — máximo 2 pasadas.
     for (let pass = 0; pass < 2; pass++) {
         const before = pts.length;
         const cleaned = pts.filter(p => Math.abs((reg.a * p.y + reg.b) - p.hour) <= 1.5);
@@ -1939,12 +1897,10 @@ function buildCalibratedRowsFromEmbeddedTimes(words, colRanges, top, bottom, geo
     }
 
     if (pts.length < 2) return null;
-    if (new Set(pts.map(p => p.hour)).size < 2) return null; // todas las anclas dicen la misma hora
-    if (Math.abs(reg.a) < 1e-6) return null; // escala degenerada
+    if (new Set(pts.map(p => p.hour)).size < 2) return null;
+    if (Math.abs(reg.a) < 1e-6) return null;
 
     const hourAt = y => reg.a * y + reg.b;
-    // margen de 1h de más para no perder la primera/última fila real que
-    // haya quedado justo en el borde de lo visible
     let hStart = Math.floor(Math.min(hourAt(top), hourAt(bottom))) - 1;
     let hEnd = Math.ceil(Math.max(hourAt(top), hourAt(bottom))) + 1;
     hStart = Math.max(SCHEDULE_START_HOUR - 1, hStart);
@@ -1971,7 +1927,7 @@ function detectMonthFromTexts(textItems) {
             if (s.includes(name)) return name;
         }
     }
-    return null; // sin nombre de mes en el archivo: quien llama usa el mes de hoy
+    return null;
 }
 
 async function renderPageToImageData(page, scale) {
@@ -1989,22 +1945,6 @@ async function renderPageToImageData(page, scale) {
     };
 }
 
-// ============================================================
-//  ★ MUESTREO: BBOX DEL TEXTO (v17) con isGray AFINADO
-// ============================================================
-// ★ CORREGIDO: los umbrales de color estaban fijos ("hardcodeados") y
-// calibrados EXCLUSIVAMENTE para los píxeles que renderiza pdf.js (colores
-// planos, exactos, sin ruido). Una foto sacada con el celular nunca da esos
-// valores exactos: el balance de blancos de la cámara, la luz ambiente, las
-// sombras y la compresión JPEG corren el color gris real hacia tonos con
-// algo de saturación (cálidos/fríos) y con brillo variable según la zona de
-// la foto. Con el umbral viejo (sat<=8, lum 170-225) casi ninguna celda
-// "gris" de una foto entraba en el rango → 0 horas extra detectadas, aunque
-// el OCR haya leído bien el texto. Por eso ahora los umbrales son un
-// parámetro (DEFAULT_COLOR_TOLERANCE para PDF, sin cambios de
-// comportamiento; IMAGE_COLOR_TOLERANCE, más laxo, para fotos), pero el
-// margen contra los colores fuertes de la planilla (sat >= 30) sigue siendo
-// amplio, así que no se confunde una celda de color con una gris.
 const DEFAULT_COLOR_TOLERANCE = {
     darkCutoff: 100, whiteCutoff: 248,
     whiteSatMax: 12, whiteLumMin: 228,
@@ -2078,9 +2018,6 @@ function sampleTextBackground(imageData, xTopLeft, yTopLeft, w, h, tol) {
     };
 }
 
-// ============================================================
-//  DEBUG OVERLAY
-// ============================================================
 async function drawDebugOverlay(page, pageNum, zones, extras) {
     const scale = 1.5;
     const viewport = page.getViewport({ scale });
@@ -2135,21 +2072,12 @@ async function drawDebugOverlay(page, pageNum, zones, extras) {
     console.log(`[DEBUG] Overlay dibujado para página ${pageNum}`);
 }
 
-// ============================================================
-//  DETECCIÓN DE CABECERAS DE DÍA ("LUNES 15")
-//  En el PDF, el nombre del día y el número suelen venir ya
-//  pegados en un solo texto ("LUNES 15"). En una foto leída por
-//  OCR casi siempre quedan como dos palabras separadas ("LUNES"
-//  y "15" una al lado de la otra) — por eso se prueban los dos
-//  casos.
-// ============================================================
 function findDayHeaders(words, maxGap) {
     const DAY_RE = /^(LUNES|MARTES|MI[EÉ]RCOLES|JUEVES|VIERNES|S[ÁA]BADO|DOMINGO)\b/;
     const onlyDayNameRe = new RegExp('^' + DAY_RE.source.slice(1) + '\\.?$');
     const headers = [];
     const usedAsNumber = new Set();
 
-    // Caso 1: nombre y número pegados en la misma palabra ("LUNES 15", típico del PDF)
     for (const w of words) {
         const s = w.str.toUpperCase().trim();
         const together = s.match(new RegExp(DAY_RE.source + '\\s+(\\d{1,2})\\b'));
@@ -2159,14 +2087,6 @@ function findDayHeaders(words, maxGap) {
         }
     }
 
-    // Caso 2: nombre y número en palabras separadas ("LUNES" ... "15", típico de OCR).
-    // ★ Ojo: NO se puede asumir que el número aparece DESPUÉS del nombre en un
-    // orden por (y, x) — dos palabras de la misma línea pueden diferir en 1px
-    // de alto (OCR) y terminar en "filas" distintas al ordenar, lo que antes
-    // hacía que se saltee la pareja (ej. "JUEVES"+"10" nunca se emparejaban
-    // aunque "SABADO"+"12" sí, en la misma imagen). Por eso ahora se busca,
-    // para cada nombre de día suelto, el número más cercano en TODA la lista
-    // de palabras, sin depender del orden en que quedaron ordenadas.
     for (let i = 0; i < words.length; i++) {
         const w = words[i];
         const s = w.str.toUpperCase().trim();
@@ -2194,28 +2114,12 @@ function findDayHeaders(words, maxGap) {
     return headers;
 }
 
-// ============================================================
-//  EXTRACCIÓN COMPARTIDA (PDF y foto usan la misma lógica)
-//  Recibe:
-//   - rawItems: texto detectado (PDF: texto real; foto: palabras del OCR), sin fusionar
-//   - imageData: los píxeles donde muestrear el color de fondo de cada celda
-//   - colorScale: cuánto hay que multiplicar las coordenadas de rawItems para
-//     caer en el mismo espacio de píxeles que imageData
-//   - geomScale: cuánto más "grandes" son las coordenadas de rawItems respecto
-//     a las que se usaron para calibrar los números mágicos de abajo (en el
-//     PDF es 1; en una foto depende de la resolución y el tamaño de letra)
-//   - baseMonth / monthState: para reconocer a qué mes pertenece cada columna
-// ============================================================
 function extractEntriesFromSource(rawItems, imageData, colorScale, geomScale, baseMonth, monthState, fixedTextHeight, synthesizeRowsIfMissing, colorTolerance, detectMissingGrayCells) {
     const dbg = { weekGroups: 0, cols: 0, rows: 0, cells: 0, grayCells: 0, syntheticRows: false, calibratedRows: false };
     const entries = [];
-    const zones = []; // solo se usa si DEBUG === true, para dibujar el overlay
-    // ★ NUEVO (solo fotos): celdas de la grilla cuyo FONDO es gris (=hora
-    // extra) pero a las que ningún nombre quedó asociado en esta pasada de
-    // OCR. Se llenan más abajo, barriendo la grilla por color en vez de por
-    // texto — así no dependen de que el OCR haya encontrado la palabra.
+    const zones = [];
     const missingGrayCells = [];
-    const regularCells = []; // ★ NUEVO: celdas normales (no grises), para la regla de las 8 hs
+    const regularCells = [];
 
     const words = mergeTextFragments(rawItems, geomScale);
     const dayHeaders = findDayHeaders(words, 25 * geomScale);
@@ -2250,9 +2154,6 @@ function extractEntriesFromSource(rawItems, imageData, colorScale, geomScale, ba
     for (let wg = 0; wg < weekGroups.length; wg++) {
         const group = weekGroups[wg];
         const groupSorted = [...group].sort((a, b) => a.x - b.x);
-        // antes pedía al menos 5 columnas (asumía que siempre venía la semana completa).
-        // Una foto puede venir recortada a solo 2, 3 o 4 días — con 2 alcanza para calcular
-        // el ancho de cada columna (por diferencia con la columna vecina).
         if (groupSorted.length < 2) continue;
 
         const weekTopY = Math.min(...group.map(h => h.y));
@@ -2312,18 +2213,6 @@ function extractEntriesFromSource(rawItems, imageData, colorScale, geomScale, ba
             }
         }
 
-        // ★ RESPALDO, PASO 1 — CALIBRAR CON LAS HORAS QUE YA VIENEN PEGADAS A
-        // ALGUNOS NOMBRES (ej. "PILAR 14:15", "CAMI O 22:15", "MARTI 14: 30").
-        // Cuando la foto no trae la columna de "5:00 - 6:00 / 6:00 - 7:00 /..."
-        // (pasa cuando alguien recorta la foto justo al lado de los días), antes
-        // de resignarnos a repartir las horas "a ojo" y parejo, buscamos esas
-        // horas sueltas que YA están en la propia celda: son datos reales de
-        // la foto, no una estimación. Con al menos dos de esas horas, en
-        // posiciones Y distintas, se puede calcular la escala real (píxeles
-        // por hora) de esta captura puntual y ubicar todas las filas con mucha
-        // más precisión que un reparto uniforme — sin tocar en nada la lectura
-        // del PDF (esto solo corre cuando ya falló encontrar la columna de
-        // horarios, y solo para fotos: synthesizeRowsIfMissing es false en PDF).
         if (uniqueRows.length === 0 && synthesizeRowsIfMissing) {
             const calibrated = buildCalibratedRowsFromEmbeddedTimes(
                 words, colRanges, weekContentTop, weekBottomY, geomScale
@@ -2334,13 +2223,6 @@ function extractEntriesFromSource(rawItems, imageData, colorScale, geomScale, ba
             }
         }
 
-        // ★ RESPALDO, PASO 2 — si tampoco hay horas sueltas para calibrar
-        // (ninguna celda trae un horario pegado al nombre), no queda otra
-        // forma de saber a qué hora corresponde cada fila... salvo que esta
-        // planilla SIEMPRE va de 5:00 a 23:00, en filas parejas de 1 hora
-        // (18 filas en total). Se arma esa grilla estándar repartiendo parejo
-        // el alto de la columna. Es el último recurso: no es tan preciso como
-        // leer la hora real, pero es mucho mejor que no leer nada.
         if (uniqueRows.length === 0 && synthesizeRowsIfMissing) {
             const totalRows = SCHEDULE_END_HOUR - SCHEDULE_START_HOUR;
             const rowH = (weekBottomY - weekContentTop) / totalRows;
@@ -2382,7 +2264,7 @@ function extractEntriesFromSource(rawItems, imageData, colorScale, geomScale, ba
             rowRanges.push({ start: r.start, end: r.end, labelY: r.y, top, bottom });
         }
 
-        const matchedInGroup = new Set(); // "fecha|horaInicio" ya cubiertos por un nombre leído
+        const matchedInGroup = new Set();
 
         for (const w of words) {
             if (isHeaderOrLabel(w.str)) continue;
@@ -2406,8 +2288,6 @@ function extractEntriesFromSource(rawItems, imageData, colorScale, geomScale, ba
             if (!name) continue;
 
             const textW = w.width || 30 * geomScale;
-            // PDF: alto fijo (no depende de la versión de PDF.js, ver nota histórica más abajo).
-            // Foto: se usa el alto real que midió el OCR para esa palabra, que es confiable.
             const textH = (fixedTextHeight != null) ? fixedTextHeight : (w.height || 4 * geomScale);
             const bboxX = w.x * colorScale;
             const bboxY = (w.y - textH) * colorScale;
@@ -2427,8 +2307,6 @@ function extractEntriesFromSource(rawItems, imageData, colorScale, geomScale, ba
 
             if (!colorInfo) continue;
 
-            // ★ NUEVO: las celdas normales (no grises) ya no se descartan: se guardan
-            // para contar cuántas horas normales tiene cada persona en el día.
             if (!colorInfo.isGray) {
                 regularCells.push({
                     date: formatDate(new Date(col.year, col.month, col.day)),
@@ -2443,11 +2321,6 @@ function extractEntriesFromSource(rawItems, imageData, colorScale, geomScale, ba
             entries.push({ date: dateStr, start: row.start, end: row.end, person: name, done: false });
         }
 
-        // ★ NUEVO: segundo barrido de la MISMA grilla, esta vez por COLOR de
-        // celda entera (no por palabra encontrada). Cualquier celda gris que
-        // haya quedado sin nombre asociado es sospechosa de ser una hora extra
-        // que el OCR no pudo leer (letra chica/bajo contraste) — se guarda
-        // para intentar releerla puntualmente con zoom (solo aplica a fotos).
         if (detectMissingGrayCells && colRanges.length && rowRanges.length) {
             const colW = colRanges[0].right - colRanges[0].left;
             const marginX = Math.max(1, colW * 0.1);
@@ -2470,19 +2343,12 @@ function extractEntriesFromSource(rawItems, imageData, colorScale, geomScale, ba
         }
     }
 
-    // ★ NUEVO: pasadas las 8 hs normales en un mismo día, lo que sigue es extra.
     entries.push(...overflowExtrasFromRegularCells(regularCells));
     dbg.autoExtras = entries.filter(e => e.auto).length;
 
     return { entries, dbg, zones, missingGrayCells };
 }
 
-// ============================================================
-//  ★ REGLA DE LAS 8 HORAS
-//  Si una persona tiene más de 8 hs NORMALES (celdas no grises) en el mismo
-//  día, desde la 9na hora en adelante se convierte automáticamente en extra.
-//  Las horas que ya vienen grises no cuentan para las 8 (ya son extras).
-// ============================================================
 const MAX_REGULAR_HOURS_PER_DAY = 8;
 
 function timeToMin(t) { const [h, m] = t.split(':').map(Number); return h * 60 + m; }
@@ -2494,12 +2360,12 @@ function overflowExtrasFromRegularCells(cells) {
     for (const c of cells) {
         const key = `${c.date}|${c.person}`;
         if (!groups.has(key)) groups.set(key, new Map());
-        groups.get(key).set(c.start, c); // mismo inicio repetido = misma celda
+        groups.get(key).set(c.start, c);
     }
     const extras = [];
     for (const byStart of groups.values()) {
         const list = [...byStart.values()].sort((a, b) => timeToMin(a.start) - timeToMin(b.start));
-        let acc = 0; // minutos normales acumulados en el día
+        let acc = 0;
         for (const c of list) {
             const s = timeToMin(c.start), e = timeToMin(c.end);
             const dur = Math.max(0, e - s);
@@ -2507,7 +2373,6 @@ function overflowExtrasFromRegularCells(cells) {
             if (acc >= limit) {
                 extras.push({ date: c.date, start: c.start, end: c.end, person: c.person, done: false, auto: true });
             } else if (acc + dur > limit) {
-                // la celda cruza el límite: solo el tramo que pasa de las 8 hs es extra
                 extras.push({ date: c.date, start: minToTime(e - (acc + dur - limit)), end: c.end, person: c.person, done: false, auto: true });
             }
             acc += dur;
@@ -2516,9 +2381,6 @@ function overflowExtrasFromRegularCells(cells) {
     return extras;
 }
 
-// ============================================================
-//  PARSER PRINCIPAL (PDF)
-// ============================================================
 async function parsePdfFile(file) {
     if (!initPdfJs()) return;
 
@@ -2530,7 +2392,6 @@ async function parsePdfFile(file) {
             const allEntries = [];
             let lastGlobalDay = 0;
             let globalMonth = hoyMVD().month;
-            // el año sale del nombre del archivo (ej. HORARIOS_2026_-_SEPTIEMBRE...); si no lo trae, el año actual
             const yearInName = String((file && file.name) || '').match(/20\d{2}/);
             let globalYear = yearInName ? parseInt(yearInName[0], 10) : hoyMVD().year;
 
@@ -2544,7 +2405,6 @@ async function parsePdfFile(file) {
                 for (const it of textContent.items) {
                     const s = String(it.str || '').trim();
                     if (!s) continue;
-                    // ignorar texto girado (los "LIBRA ..." verticales entre días)
                     if (Math.abs(it.transform[1]) > 0.5 || Math.abs(it.transform[2]) > 0.5) continue;
                     const [vx, vy] = viewport.convertToViewportPoint(it.transform[4], it.transform[5]);
                     items.push({
@@ -2608,11 +2468,6 @@ async function parsePdfFile(file) {
     reader.readAsArrayBuffer(file);
 }
 
-// ============================================================
-//  PARSER PRINCIPAL (FOTO / IMAGEN) — usa OCR (Tesseract.js) para
-//  "leer" el texto y después reutiliza exactamente la misma lógica
-//  de columnas/filas/colores que el PDF (extractEntriesFromSource).
-// ============================================================
 let ocrWorkerPromise = null;
 function getOcrWorker() {
     if (!ocrWorkerPromise) {
@@ -2631,7 +2486,6 @@ function loadImageFromFile(file) {
     });
 }
 
-// dibuja la foto en un canvas (achicándola si es enorme, para que el OCR no tarde de más)
 function drawImageToCanvas(img, maxDim) {
     let w = img.naturalWidth, h = img.naturalHeight;
     if (Math.max(w, h) > maxDim) {
@@ -2647,8 +2501,6 @@ function drawImageToCanvas(img, maxDim) {
     return canvas;
 }
 
-// pasa la salida jerárquica de Tesseract (blocks → paragraphs → lines → words)
-// a la misma forma plana {str,x,y,width,height} que ya usa el resto del parser
 function wordsFromOcrResult(data) {
     const items = [];
     if (data && Array.isArray(data.blocks) && data.blocks.length > 0) {
@@ -2665,7 +2517,6 @@ function wordsFromOcrResult(data) {
             }
         }
     } else if (data && Array.isArray(data.words)) {
-        // compatibilidad con versiones donde las palabras vienen en un array plano
         for (const word of data.words) {
             const text = String(word.text || '').trim();
             if (!text || !word.bbox) continue;
@@ -2676,32 +2527,12 @@ function wordsFromOcrResult(data) {
     return items;
 }
 
-// tamaño de letra "típico" en la foto, para poder escalar los números
-// mágicos del parser (que están calibrados para el PDF) según cada foto
 function medianWordHeight(items) {
     const heights = items.map(it => it.height).filter(h => h > 1).sort((a, b) => a - b);
     if (heights.length === 0) return IMAGE_REFERENCE_TEXT_HEIGHT;
     return heights[Math.floor(heights.length / 2)];
 }
 
-// ============================================================
-//  ★ NUEVO: SEGUNDA PASADA DE OCR CON CONTRASTE LOCAL (SOLO FOTOS)
-//  Las celdas que a esta app le importan más son justo las GRISES (son las
-//  que marcan "hora extra"), y en la foto esas celdas tienen letra gris
-//  oscuro sobre fondo gris clarito: mucho menos contraste que el resto de
-//  la planilla (letra oscura sobre blanco, o sobre un color fuerte). Un
-//  umbral "global" — que es más o menos lo que hace Tesseract por dentro
-//  antes de leer — separa bien letra/fondo cuando la diferencia de brillo
-//  es grande, pero con una celda gris sobre gris puede directamente no
-//  detectar el texto. La solución: convertir la foto a blanco y negro con
-//  un umbral LOCAL (algoritmo de Bradley, calculado rápido con una "imagen
-//  integral"), que compara cada píxel contra el promedio de su propia zona
-//  cercana en vez de contra toda la foto — así ese contraste chico alcanza
-//  igual. Se corre el OCR sobre ESA versión también, y se combinan ambas
-//  lecturas (evitando duplicar lo que ya se había leído bien en la
-//  primera pasada), en vez de reemplazar la pasada original — así, si esta
-//  segunda pasada lee peor alguna zona, no se pierde lo que ya andaba bien.
-// ============================================================
 function adaptiveBinarizeForOcr(canvas, windowSize) {
     const w = canvas.width, h = canvas.height;
     const srcCtx = canvas.getContext('2d', { willReadFrequently: true });
@@ -2712,9 +2543,6 @@ function adaptiveBinarizeForOcr(canvas, windowSize) {
         gray[p] = 0.299 * src[i] + 0.587 * src[i + 1] + 0.114 * src[i + 2];
     }
 
-    // imagen integral: permite sacar el promedio de brillo de cualquier
-    // ventana rectangular en tiempo constante, sin tener que recorrerla
-    // píxel a píxel cada vez (si no, sería demasiado lento en fotos grandes)
     const stride = w + 1;
     const integral = new Float64Array(stride * (h + 1));
     for (let y = 0; y < h; y++) {
@@ -2732,7 +2560,7 @@ function adaptiveBinarizeForOcr(canvas, windowSize) {
 
     const S = Math.max(12, Math.min(200, Math.round(windowSize || 60)));
     const half = Math.floor(S / 2);
-    const T = 0.88; // qué tan más oscuro que su entorno tiene que ser un píxel para contar como "letra"
+    const T = 0.88;
 
     const outCanvas = document.createElement('canvas');
     outCanvas.width = w; outCanvas.height = h;
@@ -2755,8 +2583,6 @@ function adaptiveBinarizeForOcr(canvas, windowSize) {
     return outCanvas;
 }
 
-// combina las palabras de una segunda pasada de OCR con las de la primera,
-// evitando agregar de nuevo una palabra que ya se había leído (misma zona)
 function mergeOcrWordSets(primary, secondary) {
     const out = primary.slice();
     for (const w2 of secondary) {
@@ -2772,17 +2598,6 @@ function mergeOcrWordSets(primary, secondary) {
     return out;
 }
 
-// ============================================================
-//  ★ NUEVO: RELECTURA DIRIGIDA DE CELDAS GRISES SIN NOMBRE (SOLO FOTOS)
-//  En vez de agrandar TODA la foto (lento, y a veces ni así alcanza para
-//  que el OCR general la lea bien), esto aprovecha que extractEntriesFromSource
-//  ya barrió la grilla por COLOR y encontró celdas grises (=hora extra) sin
-//  nombre asociado: para cada una de esas pocas celdas puntuales, se recorta
-//  esa zona de la foto, se agranda fuerte SOLO ese recorte chiquito, se le
-//  sube el contraste, y se relee con OCR en modo "una sola línea" (mucho más
-//  preciso para un recorte chico con un solo nombre que el modo automático
-//  que usa la pasada general sobre toda la foto).
-// ============================================================
 async function ocrCropForName(worker, sourceCanvas, rect) {
     const pad = Math.max(2, Math.round((rect.bottom - rect.top) * 0.2));
     const x0 = Math.max(0, Math.floor(rect.left - pad));
@@ -2792,7 +2607,6 @@ async function ocrCropForName(worker, sourceCanvas, rect) {
     const cw = x1 - x0, ch = y1 - y0;
     if (cw < 4 || ch < 4) return null;
 
-    // agranda el recorte para que la letra quede grande y nítida
     const targetH = 220;
     const scale = Math.min(10, Math.max(2, targetH / ch));
     const outW = Math.round(cw * scale), outH = Math.round(ch * scale);
@@ -2807,7 +2621,7 @@ async function ocrCropForName(worker, sourceCanvas, rect) {
     let ocrTarget = upCanvas;
     try {
         ocrTarget = adaptiveBinarizeForOcr(upCanvas, Math.max(15, Math.round(outH / 5)));
-    } catch (_) { /* si falla el binarizado, se intenta igual con el recorte agrandado a color */ }
+    } catch (_) {}
 
     try {
         const { data } = await worker.recognize(ocrTarget, {}, { text: true });
@@ -2819,12 +2633,12 @@ async function ocrCropForName(worker, sourceCanvas, rect) {
 
 async function retryMissingGrayCells(worker, canvas, missingCells) {
     if (!missingCells || missingCells.length === 0) return [];
-    const MAX_RETRIES = 60; // límite de seguridad para no tardar de más si algo salió raro
+    const MAX_RETRIES = 60;
     const cells = missingCells.slice(0, MAX_RETRIES);
     const recovered = [];
     let psmChanged = false;
     try {
-        await worker.setParameters({ tessedit_pageseg_mode: '7' }); // 1 sola línea de texto
+        await worker.setParameters({ tessedit_pageseg_mode: '7' });
         psmChanged = true;
     } catch (_) {}
     for (const cell of cells) {
@@ -2832,7 +2646,7 @@ async function retryMissingGrayCells(worker, canvas, missingCells) {
         if (name) recovered.push({ date: cell.date, start: cell.start, end: cell.end, person: name, done: false });
     }
     if (psmChanged) {
-        try { await worker.setParameters({ tessedit_pageseg_mode: '3' }); } catch (_) {} // vuelve al modo automático para la próxima foto
+        try { await worker.setParameters({ tessedit_pageseg_mode: '3' }); } catch (_) {}
     }
     return recovered;
 }
@@ -2877,11 +2691,6 @@ async function parseImageFiles(files) {
             const { data } = await worker.recognize(canvas, {}, { text: true, blocks: true });
             let items = wordsFromOcrResult(data);
 
-            // ★ NUEVO: segunda pasada sobre una versión con contraste local
-            // (ver adaptiveBinarizeForOcr), para no perder las celdas grises
-            // con poco contraste letra/fondo. Si algo falla acá (foto rarísima,
-            // sin memoria, etc.) seguimos con lo que ya se leyó en la primera
-            // pasada — nunca debe tirar abajo toda la importación.
             try {
                 const windowSize = medianWordHeight(items) * 6 || 60;
                 const enhancedCanvas = adaptiveBinarizeForOcr(canvas, windowSize);
@@ -2913,9 +2722,6 @@ async function parseImageFiles(files) {
             if (result.dbg.syntheticRows) dbgTotal.syntheticRows = true;
             if (result.dbg.calibratedRows) dbgTotal.calibratedRows = true;
 
-            // ★ NUEVO: celdas grises detectadas por color pero sin nombre leído
-            // todavía — releerlas puntualmente con zoom antes de seguir con la
-            // próxima foto (ver ocrCropForName / retryMissingGrayCells más arriba).
             if (result.missingGrayCells && result.missingGrayCells.length > 0) {
                 try {
                     const recovered = await retryMissingGrayCells(worker, canvas, result.missingGrayCells);
@@ -2937,11 +2743,6 @@ async function parseImageFiles(files) {
         showPdfPreview(merged);
         console.log('[HORAX] Debug foto:', dbgTotal, '→', merged.length, 'extras');
 
-        // ★ NUEVO: si hubo celdas grises sin nombre que necesitaron la
-        // relectura con zoom, se arma un aviso aparte con cuántas se
-        // pudieron recuperar así y cuántas siguen sin leerse ni con zoom
-        // (esas sí conviene revisarlas/cargarlas a mano). Se combina con
-        // el resto de los avisos de abajo, si hay, para no pisarlos.
         let zoomNote = '';
         if (dbgTotal.grayCellsRetried > 0) {
             const stillMissing = dbgTotal.grayCellsRetried - dbgTotal.recoveredCells;
@@ -2956,18 +2757,11 @@ async function parseImageFiles(files) {
                 `Debug: ${dbgTotal.weekGroups} semanas, ${dbgTotal.cols} columnas, ${dbgTotal.rows} filas, ${dbgTotal.cells} celdas con nombre, ${dbgTotal.grayCells} reconocidas como extra.`;
             showToast('No se detectaron extras');
         } else if (dbgTotal.syntheticRows) {
-            // ninguna de las dos cosas funcionó: ni la columna de horarios de la
-            // izquierda, ni horas sueltas pegadas a algún nombre para calibrar.
-            // Los horarios de abajo son una grilla pareja estimada, no lo que dice la foto.
             errorBox.style.display = 'block';
             errorBox.style.color = '#B45309';
             errorBox.textContent = zoomNote + 'Ojo: esta foto no traía la columna de horarios a la izquierda ni horas sueltas junto a los nombres para calcularlas, así que los horarios que ves abajo son estimados (repartidos parejo de 5:00 a 23:00), no leídos de la foto. Revisalos antes de importar, o mejor sacá de nuevo la foto incluyendo esa columna.';
             showToast(`${merged.length} extras con horarios estimados — revisá antes de importar`);
         } else if (dbgTotal.calibratedRows) {
-            // la foto no traía la columna de horarios, pero sí había horas sueltas
-            // pegadas a algunos nombres (ej. "14:15", "22:15") y se usaron para
-            // calcular el resto de las filas. Es bastante más confiable que el
-            // reparto parejo, pero igual vale avisar que no vino la columna original.
             errorBox.style.display = 'block';
             errorBox.style.color = '#2563EB';
             errorBox.textContent = zoomNote + 'Esta foto no traía la columna de horarios a la izquierda, pero se calcularon los horarios a partir de las horas que aparecen pegadas a algunos nombres (ej. 14:15, 22:15). Deberían ser bastante confiables, pero revisalos igual antes de importar.';
@@ -3048,7 +2842,6 @@ function showPdfPreview(entries) {
     document.getElementById('pdfImportBtn').disabled = entries.length === 0;
 }
 
-// ---- Deshacer la última importación ----
 function getLastImportInfo() {
     const ids = overtimeData.map(e => e.importId).filter(Boolean);
     if (ids.length === 0) return null;
@@ -3095,18 +2888,16 @@ async function undoLastImport() {
 let lastImportAt = 0;
 function importPdfData() {
     if (!pdfParsedData || pdfParsedData.length === 0) {
-        // si el botón dispara la función 2 veces, la 2da ya no tiene datos: no mostrar error
         if (Date.now() - lastImportAt > 2000) showToast('No hay datos para importar');
         return;
     }
     lastImportAt = Date.now();
-    // no duplicar extras que ya están cargadas (PDFs que se pisan entre semanas)
     const keyOf = e => `${e.date}|${e.start}|${e.end}|${e.person}`;
     const existing = new Set(overtimeData.map(keyOf));
     const fresh = pdfParsedData.filter(item => !existing.has(keyOf(item)));
     const skipped = pdfParsedData.length - fresh.length;
     let maxId = overtimeData.reduce((m, e) => Math.max(m, e.id), 0);
-    const importId = Date.now(); // marca para poder deshacer esta importación
+    const importId = Date.now();
     const newEntries = fresh.map(item => ({
         id: ++maxId, date: item.date, start: item.start,
         end: item.end, person: item.person, done: false, importId,
@@ -3132,14 +2923,6 @@ function importPdfData() {
     switchTab('tabCalendar');
 }
 
-// ============================================================
-//  ★ AVISOS (notificaciones push)
-//  El mismo día que haya extras pendientes, una Cloud Function (ver carpeta
-//  /functions) manda un aviso a los dispositivos que activaron esto.
-//  Cada dispositivo guarda su "token" en users/{uid}.fcmTokens.
-// ============================================================
-// Se saca de: Firebase Console → Configuración del proyecto → Cloud Messaging
-// → "Certificados push web" → Generar par de claves → copiar la "Clave pública".
 const VAPID_KEY = 'BGB_8In3RnI_oN2EbtgYwxOojy4fIcv7lc7ThXy6BEaDRmmcSFHAH3v8YkzUilEmk-bhy-k_i2TIdMbHF3oXMSQ';
 const PUSH_TOKEN_KEY = 'horax_push_token_';
 
@@ -3204,7 +2987,6 @@ async function disablePush() {
     refreshPushUi();
 }
 
-// Los tokens pueden cambiar con el tiempo: si ya estaban activados, se re-guardan solos.
 async function syncPushToken() {
     try {
         if (!pushSupported() || !pushConfigured() || !currentUser) return;
@@ -3236,9 +3018,6 @@ function refreshPushUi() {
     }
 }
 
-// Engancha el botón "Continuar con Google" de la tarjeta de login. Se llama
-// una vez al arrancar la app y de nuevo cada vez que resetLoginCard() recrea
-// el botón (porque quedó reemplazado por el formulario de alta automática).
 function bindGoogleLoginButton() {
     const googleBtn = document.getElementById('googleLoginBtn');
     if (!googleBtn) return;
@@ -3354,7 +3133,7 @@ function init() {
         if (ev.target.id === 'auditModal') closeAuditModal();
     });
 
-    // ★ NUEVO (#5): botones para exportar el resumen (CSV / PDF)
+    // Botones para exportar el resumen (CSV / PDF)
     const exportCsvBtn = document.getElementById('exportCsvBtn');
     if (exportCsvBtn) exportCsvBtn.addEventListener('click', exportSummaryCsv);
     const exportPdfBtn = document.getElementById('exportPdfBtn');
@@ -3370,8 +3149,6 @@ function init() {
     const dropZone = document.getElementById('pdfDropZone');
     const fileInput = document.getElementById('pdfFileInput');
 
-    // Reparte los archivos elegidos: si hay fotos, se procesan todas juntas
-    // con OCR; si no hay ninguna foto pero sí un PDF, se usa el lector de PDF.
     function handleImportFiles(fileList) {
         const files = Array.from(fileList || []);
         if (files.length === 0) return;
@@ -3400,7 +3177,6 @@ function init() {
     });
     document.getElementById('pdfImportBtn').addEventListener('click', importPdfData);
 
-    // atajos del ícono de la app (manifest.json): #add y #calendar
     const hashTab = { '#add': 'tabAdd', '#calendar': 'tabCalendar' }[location.hash];
     if (hashTab) switchTab(hashTab);
 

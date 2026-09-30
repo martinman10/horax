@@ -41,6 +41,9 @@
     <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-messaging-compat.js"></script>
+
+    <!-- html2pdf.js - genera PDF del resumen con colores (sin pasar por "imprimir") -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 </head>
 <body>
 <div id="loginScreen" class="login-screen" style="display:none;">
@@ -105,7 +108,7 @@
                         <i class="fas fa-file-csv"></i> Excel (CSV)
                     </button>
                     <button class="btn-secondary" id="exportPdfBtn">
-                        <i class="fas fa-print"></i> PDF / Imprimir
+                        <i class="fas fa-file-pdf"></i> PDF
                     </button>
                 </div>
 
