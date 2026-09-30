@@ -4069,3 +4069,7 @@ function initInstallPrompt() {
         }
     }
 }
+
+// Arranque de la app (el script se carga con defer, pero por las dudas se cubre ambos casos)
+if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+else init();
