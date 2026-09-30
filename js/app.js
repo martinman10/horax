@@ -36,6 +36,53 @@ db.enablePersistence({ synchronizeTabs: true }).catch(err => {
     console.warn('[HORAX] Persistencia offline no disponible:', err.code);
 });
 
+// ---- Librerías pesadas: se cargan recién cuando se usan (no al abrir la app) ----
+const LIB_URLS = {
+    pdfjs: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
+    tesseract: 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js',
+    html2pdf: 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'
+};
+const LIB_READY = { pdfjs: () => typeof pdfjsLib !== 'undefined', tesseract: () => typeof Tesseract !== 'undefined', html2pdf: () => typeof html2pdf !== 'undefined' };
+const libPromises = {};
+function loadLib(name) {
+    if (LIB_READY[name]()) return Promise.resolve(true);
+    if (!libPromises[name]) {
+        libPromises[name] = new Promise(resolve => {
+            const sc = document.createElement('script');
+            sc.src = LIB_URLS[name]; sc.crossOrigin = 'anonymous';
+            sc.onload = () => resolve(LIB_READY[name]());
+            sc.onerror = () => { sc.remove(); resolve(false); };
+            document.head.appendChild(sc);
+        }).then(ok => { if (!ok) delete libPromises[name]; return ok; });
+    }
+    return libPromises[name];
+}
+// Con la app ya abierta y un rato de calma, se bajan PDF.js y html2pdf a la caché para que la primera vez que se usen sean instantáneas
+window.addEventListener('load', () => setTimeout(() => {
+    const c = navigator.connection; if (c && (c.saveData || /2g/.test(c.effectiveType || ''))) return;
+    ['pdfjs', 'html2pdf'].forEach(k => fetch(LIB_URLS[k], { mode: 'cors' }).catch(() => {}));
+}, 6000));
+
+// ---- Lecturas de Firestore: primero lo guardado en el dispositivo (instantáneo), después se verifica con la nube ----
+async function getDocCacheFirst(ref, onFresh) {
+    try {
+        const c = await ref.get({ source: 'cache' });
+        if (c.exists) { ref.get().then(f => onFresh && onFresh(f)).catch(() => {}); return c; }
+    } catch (_) {}
+    return ref.get();
+}
+async function getQueryCacheFirst(q, onFresh) {
+    try {
+        const c = await q.get({ source: 'cache' });
+        if (!c.empty) { q.get().then(f => onFresh && onFresh(f)).catch(() => {}); return c; }
+    } catch (_) {}
+    return q.get();
+}
+function localsFromSnap(snap) {
+    return snap.docs.map(d => ({ id: d.id, name: (d.data() && d.data().name) || d.id }))
+        .sort((a, b) => a.name.localeCompare(b.name, 'es'));
+}
+
 let currentUser = null;
 let userDocUnsubscribe = null;
 let suppressNextSnapshot = false; // evita re-renderizar por nuestro propio guardado
@@ -77,7 +124,14 @@ async function handleSignedIn(user) {
     const ref = userDocRef(user.uid);
     let data = null;
     try {
-        const snap = await ref.get();
+        const snap = await getDocCacheFirst(ref, fresh => {
+            // si en la nube cambió el rol o el local desde la última vez, se recarga una sola vez para tomar lo nuevo
+            const f = fresh.exists ? (fresh.data() || {}) : null;
+            if (f && ((f.role || null) !== ((data && data.role) || null) || (f.localId || null) !== ((data && data.localId) || null))) {
+                try { if (sessionStorage.getItem('horax_fresh_reload')) return; sessionStorage.setItem('horax_fresh_reload', '1'); } catch (_) {}
+                location.reload();
+            }
+        });
         if (snap.exists) data = snap.data() || {};
     } catch (err) {
         console.error('[HORAX] Error cargando el usuario:', err);
@@ -98,10 +152,8 @@ async function handleSignedIn(user) {
 
     if (currentRole === 'admin') {
         try {
-            const snap = await localsCollectionRef().get();
-            availableLocals = snap.docs
-                .map(d => ({ id: d.id, name: (d.data() && d.data().name) || d.id }))
-                .sort((a, b) => a.name.localeCompare(b.name, 'es'));
+            const snap = await getQueryCacheFirst(localsCollectionRef(), fresh => { availableLocals = localsFromSnap(fresh); renderLocalBar(); });
+            availableLocals = localsFromSnap(snap);
         } catch (err) {
             console.error('[HORAX] Error cargando la lista de locales:', err);
             availableLocals = [];
@@ -1350,6 +1402,7 @@ function renderCalendar() {
             if (el.classList.contains('other-month')) {
                 const [yy, mm] = date.split('-').map(Number);
                 currentYear = yy; currentMonth = mm - 1;
+                summaryYear = currentYear; summaryMonth = currentMonth; // mes unido con el Resumen
             }
             renderCalendar();
         });
@@ -1458,6 +1511,7 @@ function currentCyclePeriod() {
 function goToCurrentPeriod() {
     const p = currentCyclePeriod();
     summaryYear = p.year; summaryMonth = p.month;
+    currentYear = p.year; currentMonth = p.month; // mes unido con el Calendario
     renderSummary();
     updateBadges();
 }
@@ -1489,6 +1543,7 @@ function shiftSummary(delta) {
     summaryMonth += delta;
     if (summaryMonth < 0) { summaryMonth = 11; summaryYear--; }
     if (summaryMonth > 11) { summaryMonth = 0; summaryYear++; }
+    currentYear = summaryYear; currentMonth = summaryMonth; // mes unido con el Calendario
     renderSummary();
     updateBadges();
 }
@@ -1531,6 +1586,7 @@ function goToToday() {
     const h = hoyMVD();
     currentYear = h.year;
     currentMonth = h.month;
+    summaryYear = h.year; summaryMonth = h.month; // mes unido con el Resumen
     selectedDate = formatDate(hoyDate());
     renderCalendar();
 }
@@ -1832,7 +1888,7 @@ async function exportSummaryCsv() {
 async function exportSummaryPdf() {
     const entries = getEntriesForSummary();
     if (entries.length === 0) { showToast('No hay datos para exportar'); return; }
-    if (typeof html2pdf === 'undefined') {
+    if (!(await loadLib('html2pdf'))) {
         showToast('No se pudo cargar el generador de PDF. Revisá la conexión.', 3500);
         return;
     }
@@ -2965,6 +3021,7 @@ function overflowExtrasFromRegularCells(cells) {
 //  PARSER PRINCIPAL (PDF)
 // ============================================================
 async function parsePdfFile(file) {
+    if (!(await loadLib('pdfjs'))) { showToast('No se pudo cargar el lector de PDF. Revisá la conexión.', 3500); return; }
     if (!initPdfJs()) return;
 
     const reader = new FileReader();
@@ -3284,7 +3341,7 @@ async function retryMissingGrayCells(worker, canvas, missingCells) {
 
 async function parseImageFiles(files) {
     if (!files || files.length === 0) return;
-    if (typeof Tesseract === 'undefined') {
+    if (!(await loadLib('tesseract'))) {
         showToast('El lector de fotos (OCR) no cargó. Revisá tu conexión e intentá de nuevo.');
         return;
     }
@@ -3570,8 +3627,7 @@ function importPdfData() {
     if (newEntries.length > 0) {
         const [y, m] = newEntries[0].date.split('-').map(Number);
         currentYear = y; currentMonth = m - 1;
-        const pr = getClosingPeriodOf(newEntries[0].date);
-        summaryYear = pr.year; summaryMonth = pr.month;
+        summaryYear = currentYear; summaryMonth = currentMonth; // mes unido con el Calendario
         selectedDate = newEntries[0].date;
     }
     switchTab('tabCalendar');
@@ -3736,8 +3792,7 @@ function init() {
     const today = hoyDate();
     currentMonth = today.getMonth();
     currentYear = today.getFullYear();
-    const cyc = currentCyclePeriod();
-    summaryYear = cyc.year; summaryMonth = cyc.month;
+    summaryYear = currentYear; summaryMonth = currentMonth; // mes unido con el Calendario
     selectedDate = formatDate(today);
     const addDate = document.getElementById('addDate');
     if (addDate) addDate.value = formatDate(today);
@@ -3788,10 +3843,12 @@ function init() {
 
     document.getElementById('prevMonth').addEventListener('click', () => {
         currentMonth--; if (currentMonth < 0) { currentMonth = 11; currentYear--; }
+        summaryYear = currentYear; summaryMonth = currentMonth; // mes unido con el Resumen
         selectedDate = null; renderCalendar();
     });
     document.getElementById('nextMonth').addEventListener('click', () => {
         currentMonth++; if (currentMonth > 11) { currentMonth = 0; currentYear++; }
+        summaryYear = currentYear; summaryMonth = currentMonth; // mes unido con el Resumen
         selectedDate = null; renderCalendar();
     });
     document.addEventListener('click', ev => {
