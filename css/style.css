@@ -611,12 +611,81 @@
 .install-tab i { font-size: 15px; }
 .install-tab:active { transform: scale(0.97); }
 .install-tab.active { background: var(--primary-bg); border-color: var(--primary-ink); color: var(--primary-ink); }
-.install-steps {
-    margin: 0 0 18px; padding: 0 0 0 22px; color: var(--text-secondary); font-size: 14px; line-height: 1.55;
+/* Pasos del tutorial: número + texto + mini-dibujo del botón */
+.install-card { max-height: calc(100dvh - 40px); overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.install-status, .install-warn {
+    border-radius: 10px; padding: 10px 12px; font-size: 13px; line-height: 1.45; margin-bottom: 12px;
 }
-.install-steps li { margin-bottom: 8px; }
-.install-steps li:last-child { margin-bottom: 0; }
-.install-steps b { color: var(--text); }
+.install-status { background: #ECFDF5; color: #047857; }
+.install-warn { background: #FFF7ED; color: #C2410C; }
+.install-warn b { color: #9A3412; }
+.install-now { width: 100%; margin-bottom: 14px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.install-steps { margin: 0 0 12px; padding: 0; }
+.install-step { display: flex; gap: 12px; padding: 13px 0; border-top: 1px solid var(--border); }
+.install-step:first-child { border-top: none; padding-top: 2px; }
+.install-num {
+    flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%; margin-top: 1px;
+    background: var(--primary); color: var(--on-primary); font-size: 13px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+}
+.install-step.done .install-num { background: #10B981; color: #fff; font-size: 12px; }
+.install-body { flex: 1; min-width: 0; }
+.install-body p { margin: 0; font-size: 14px; line-height: 1.5; color: var(--text-secondary); }
+.install-body b { color: var(--text); }
+.install-body p.install-hint { margin-top: 8px; font-size: 12px; line-height: 1.45; color: var(--text-light); }
+.install-mock {
+    margin-top: 9px; padding: 10px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 12px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    color: var(--text); font-size: 13px;
+}
+.ui-chip {
+    display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px;
+    background: var(--card); border: 1px solid var(--border); font-weight: 600; font-size: 13px;
+}
+.ui-urlbar {
+    display: flex; align-items: center; gap: 8px; width: 100%; background: var(--card);
+    border: 1px solid var(--border); border-radius: 999px; padding: 5px 6px 5px 12px;
+}
+.ui-url { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--text-secondary); }
+.ui-url i { font-size: 10px; margin-right: 5px; color: var(--text-light); }
+.ui-dot {
+    flex-shrink: 0; width: 30px; height: 30px; border-radius: 50%; background: var(--bg);
+    color: var(--text-secondary); font-size: 14px; display: flex; align-items: center; justify-content: center;
+}
+.ui-row {
+    width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 12px; font-size: 13px; font-weight: 500;
+}
+.ui-row.left { justify-content: flex-start; }
+.ui-row i { color: var(--text-secondary); }
+.ui-switch { position: relative; flex-shrink: 0; width: 38px; height: 22px; border-radius: 999px; background: var(--border); }
+.ui-switch::after {
+    content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px;
+    border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+}
+.ui-switch.on { background: #34C759; }
+.ui-switch.on::after { left: 18px; }
+.ui-btn { margin-left: auto; padding: 6px 14px; border-radius: 8px; background: var(--primary); color: var(--on-primary); font-weight: 600; font-size: 13px; }
+.ui-appicon {
+    width: 38px; height: 38px; border-radius: 10px; color: #fff; font-weight: 800; font-size: 16px;
+    background: linear-gradient(135deg, var(--primary-ink), var(--primary-ink-light));
+    display: flex; align-items: center; justify-content: center;
+}
+.ui-appname { font-weight: 700; font-size: 13px; }
+/* Resaltado pulsante: "tocá acá" */
+.hl { box-shadow: 0 0 0 2px var(--primary-ink); animation: installPulse 1.6s ease-in-out infinite; }
+@keyframes installPulse {
+    0%, 100% { box-shadow: 0 0 0 2px var(--primary-ink), 0 0 0 4px rgba(var(--primary-rgb), 0.18); }
+    50%      { box-shadow: 0 0 0 2px var(--primary-ink), 0 0 0 9px rgba(var(--primary-rgb), 0); }
+}
+@media (prefers-reduced-motion: reduce) { .hl { animation: none; } }
+.install-note {
+    margin: 0 0 14px; padding: 10px 12px; background: var(--bg); border-radius: 10px;
+    font-size: 12.5px; line-height: 1.5; color: var(--text-secondary);
+}
+.install-note:empty { display: none; }
+.install-note b { color: var(--text); }
 
 /* ---- Zona peligrosa en Admin ---- */
 .btn-danger-soft {
