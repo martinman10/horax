@@ -3679,6 +3679,8 @@ function bindGoogleLoginButton() {
         const errorEl = document.getElementById('loginError');
         if (errorEl) errorEl.style.display = 'none';
         const provider = new firebase.auth.GoogleAuthProvider();
+        // Siempre mostrar el selector de cuentas de Google (si no, entra directo con el último mail usado)
+        provider.setCustomParameters({ prompt: 'select_account' });
         auth.signInWithPopup(provider).catch(err => {
             console.error('[HORAX] Error de login:', err);
             if (errorEl) {
@@ -3885,124 +3887,185 @@ function init() {
     console.log('✅ HORAX iniciada');
 }
 // ============================================================
-//  TUTORIAL DE INSTALACIÓN (PWA)
-//  Detecta iOS / Android / desktop y muestra los pasos según cada uno.
-//  Se muestra la primera vez que alguien entra (si no está instalada),
-//  y se puede reabrir desde el perfil ("¿Cómo instalar?").
+//  TUTORIAL DE INSTALACIÓN (PWA) — un paso por pantalla, con dibujo del celu
+//  Verificado: iOS 26 (⋯ → Compartir → Agregar a pantalla de inicio),
+//  iOS 18 o anterior (botón Compartir abajo), Chrome Android, Chrome/Edge/Safari de compu.
+//  En Android y Chrome/Edge de compu aparece "Instalar ahora" si el navegador lo permite.
 // ============================================================
 const INSTALL_DISMISSED_KEY = 'horax_install_dismissed_v1';
+let deferredInstallPrompt = null, installOS = null, installIOSVer = '26', installIdx = 0;
+
+window.addEventListener('beforeinstallprompt', ev => { ev.preventDefault(); deferredInstallPrompt = ev; refreshInstallUI(); });
+window.addEventListener('appinstalled', () => {
+    deferredInstallPrompt = null; markInstallDismissed(); hideInstallBanner(); closeInstallModal();
+    if (typeof showToast === 'function') showToast('¡HORAX instalada! Abrila desde el ícono ✨', 4500);
+});
 
 function isStandalone() {
-    return (
-        (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+    return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
         window.navigator.standalone === true ||
-        (document.referrer && document.referrer.startsWith('android-app://'))
-    );
+        (document.referrer && document.referrer.startsWith('android-app://'));
 }
 function detectPlatform() {
     const ua = navigator.userAgent || '';
-    if (/iPad|iPhone|iPod/.test(ua) && !window.MSStream) return 'ios';
-    if (/Android/.test(ua)) return 'android';
-    return 'desktop';
+    if ((/iPad|iPhone|iPod/.test(ua) && !window.MSStream) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) return 'ios';
+    return /Android/.test(ua) ? 'android' : 'desktop';
 }
-function installDismissed() {
-    try { return localStorage.getItem(INSTALL_DISMISSED_KEY) === '1'; } catch (_) { return false; }
-}
-function markInstallDismissed() {
-    try { localStorage.setItem(INSTALL_DISMISSED_KEY, '1'); } catch (_) {}
-}
+function installDismissed() { try { return localStorage.getItem(INSTALL_DISMISSED_KEY) === '1'; } catch (_) { return false; } }
+function markInstallDismissed() { try { localStorage.setItem(INSTALL_DISMISSED_KEY, '1'); } catch (_) {} }
 
-// Steps por plataforma
+// ---- Íconos (SVG, no dependen de Font Awesome) ----
+const IC = {
+    share: '<path d="M12 14V3m0 0L8 7m4-4 4 4M8 10H7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-1"/>',
+    dots: '<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>',
+    dotsV: '<circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/>',
+    plus: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M12 8v8M8 12h8"/>',
+    down: '<path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/>',
+    book: '<path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/>',
+    tabs: '<rect x="4" y="7" width="13" height="13" rx="2"/><path d="M8 4h11a1 1 0 0 1 1 1v11"/>',
+    back: '<path d="m15 5-7 7 7 7"/>', fwd: '<path d="m9 5 7 7-7 7"/>'
+};
+const ic = n => `<svg class="sc-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${IC[n]}</svg>`;
+
+// ---- Piezas para dibujar las pantallas ----
+const hl = (h, html) => h ? `<span class="hl-wrap">${html}</span>` : html;
+const scBrand = name => `<div class="sc-brand">${name}</div>`;
+const scBar = (icon, name, side) => `<div class="sc-bar${side === 'left' ? ' rev' : ''}"><span class="sc-url">🔒 ${location.hostname || 'horax'}</span>${hl(true, `<span class="sc-btn">${ic(icon)}</span>`)}</div>`;
+const scTabbar = () => `<div class="sc-tabbar"><span class="sc-btn dim">${ic('back')}</span><span class="sc-btn dim">${ic('fwd')}</span>${hl(true, `<span class="sc-btn">${ic('share')}</span>`)}<span class="sc-btn dim">${ic('book')}</span><span class="sc-btn dim">${ic('tabs')}</span></div>`;
+const skel = w => `<div class="sc-row skel"><span style="width:${w}%"></span></div>`;
+const scList = rows => `<div class="sc-list">${rows.join('')}</div>`;
+const scRow = (icon, label, h) => `<div class="sc-row${h ? ' hl' : ''}"><span>${label}</span>${ic(icon)}</div>`;
+const scDialog = (switchOn, btn, btnTop) => `<div class="sc-dialog">
+    <div class="sc-dhead"><span>Cancelar</span><b>Agregar a inicio</b><span class="sc-primary hl">${btn}</span></div>
+    <div class="sc-field"><span class="sc-appicon">H</span><span>HORAX</span></div>
+    ${switchOn ? `<div class="sc-row"><span>Abrir como app web</span><span class="sc-switch"></span></div>` : ''}</div>`;
+const scAppIcon = () => `<div class="sc-home"><span class="sc-appicon big">H</span><span>HORAX</span></div>`;
+const scInstallDlg = () => `<div class="sc-dialog"><div class="sc-field"><span class="sc-appicon">H</span><span>Instalar HORAX</span></div><div class="sc-dfoot"><span>Cancelar</span><span class="sc-primary hl">Instalar</span></div></div>`;
+
+const IOS_SHARE_SHEET = () => scList([skel(60), skel(75), scRow('plus', 'Agregar a pantalla de inicio', true), skel(50)]);
+const IOS_TAIL = [
+    { t: 'Deslizá la lista hacia arriba hasta ver <b>Agregar a pantalla de inicio</b> y tocala.<br><small>No la confundas con "Agregar marcador".</small>', s: IOS_SHARE_SHEET },
+    { t: 'Dejá activado <b>Abrir como app web</b> y tocá <b>Agregar</b>, arriba a la derecha.<br><small>Si no ves ese interruptor, no pasa nada.</small>', s: () => scDialog(true, 'Agregar') },
+    { t: '¡Listo! Ahora abrí HORAX desde el <b>ícono nuevo</b> de tu pantalla de inicio, no desde Safari.', s: scAppIcon, done: true }
+];
 const INSTALL_STEPS = {
-    ios: [
-        'Abrí esta página en <b>Safari</b> (no en Chrome).',
-        'Tocá el botón <b>Compartir</b> abajo en el centro (el cuadradito con la flecha hacia arriba).',
-        'Deslizá la lista y elegí <b>"Agregar a pantalla de inicio"</b>.',
-        'Tocá <b>"Agregar"</b> arriba a la derecha. Listo ✨'
+    ios26: [
+        { t: 'Abrí HORAX en <b>Safari</b>.<br><small>Si llegaste desde WhatsApp, tocá <b>Abrir en Safari</b>.</small>', s: () => scBrand('Safari') },
+        { t: 'Tocá los <b>tres puntitos</b> al lado de la barra de direcciones.', s: () => scBar('dots') },
+        { t: 'En el menú, tocá <b>Compartir</b>.', s: () => scList([skel(55), scRow('share', 'Compartir', true), skel(70)]) },
+        ...IOS_TAIL
+    ],
+    ios18: [
+        { t: 'Abrí HORAX en <b>Safari</b>.<br><small>Si llegaste desde WhatsApp, tocá <b>Abrir en Safari</b>.</small>', s: () => scBrand('Safari') },
+        { t: 'Tocá el botón <b>Compartir</b> (un cuadradito con una flecha hacia arriba), abajo en el centro.', s: scTabbar },
+        ...IOS_TAIL
     ],
     android: [
-        'Abrí esta página en <b>Chrome</b>.',
-        'Tocá los <b>tres puntitos</b> arriba a la derecha.',
-        'Elegí <b>"Instalar aplicación"</b> o <b>"Agregar a pantalla de inicio"</b>.',
-        'Confirmá tocando <b>"Instalar"</b>. Listo ✨'
+        { t: 'Abrí HORAX en <b>Chrome</b>.', s: () => scBrand('Chrome') },
+        { t: 'Tocá los <b>tres puntitos</b> arriba a la derecha.', s: () => scBar('dotsV') },
+        { t: 'Tocá <b>Instalar app</b> (o <b>Agregar a la pantalla principal</b>).<br><small>Si te deja elegir, tocá <b>Instalar</b>, no "acceso directo".</small>', s: () => scList([skel(60), scRow('down', 'Instalar app', true), skel(70)]) },
+        { t: 'Confirmá tocando <b>Instalar</b>.', s: scInstallDlg },
+        { t: '¡Listo! HORAX queda en tu pantalla de inicio, como cualquier app.', s: scAppIcon, done: true }
     ],
     desktop: [
-        'En la barra de direcciones de <b>Chrome</b>, buscá el ícono de <b>instalar</b> (una flechita hacia abajo en un cuadradito) a la derecha.',
-        'Hacé clic y elegí <b>"Instalar"</b>.',
-        'La app se abre en su propia ventana, como cualquier otro programa. Listo ✨'
+        { t: 'Abrí HORAX en <b>Chrome</b> o <b>Edge</b>.', s: () => scBrand('Chrome · Edge') },
+        { t: 'A la derecha de la barra de direcciones, hacé clic en el <b>ícono de instalar</b>.<br><small>Si no aparece: menú ⋮ → <b>Guardar y compartir</b> → <b>Instalar página como app</b>. En Edge: menú ⋯ → <b>Aplicaciones</b> → <b>Instalar este sitio como aplicación</b>.</small>', s: () => scBar('down') },
+        { t: 'Confirmá con <b>Instalar</b>.', s: scInstallDlg },
+        { t: '¡Listo! Se abre en su propia ventana, como cualquier programa.', s: scAppIcon, done: true }
     ]
 };
+const INSTALL_NOTES = {
+    ios: '<b>Avisos:</b> solo llegan si abrís la app desde el ícono nuevo (necesita iOS 16.4 o más nuevo). Si tu iPhone es de los últimos, usá la opción "iOS 26".',
+    android: '¿Samsung Internet? Menú ☰ → <b>Agregar página a</b> → <b>Pantalla de inicio</b>. ¿Firefox? Menú ⋮ → <b>Instalar</b>.',
+    desktop: '<b>Safari en Mac:</b> menú Archivo → <b>Agregar al Dock</b>. Firefox en compu no permite instalar apps.'
+};
 
-function renderInstallSteps(os) {
-    const stepsEl = document.getElementById('installSteps');
-    const tabs = document.querySelectorAll('#installTabs .install-tab');
-    if (!stepsEl) return;
-    const list = INSTALL_STEPS[os] || INSTALL_STEPS.desktop;
-    stepsEl.innerHTML = list.map(s => `<li>${s}</li>`).join('');
-    tabs.forEach(t => t.classList.toggle('active', t.dataset.os === os));
+function currentInstallKey() { return installOS === 'ios' ? 'ios' + installIOSVer : installOS; }
+
+function renderInstall() {
+    const steps = INSTALL_STEPS[currentInstallKey()], st = steps[installIdx];
+    document.getElementById('installStage').innerHTML = st.s();
+    document.getElementById('installText').innerHTML = st.t;
+    document.getElementById('installDots').innerHTML = steps.map((_, i) => `<i class="${i === installIdx ? 'on' : (i < installIdx ? 'past' : '')}"></i>`).join('');
+    const prev = document.getElementById('installPrev'), next = document.getElementById('installNext');
+    prev.style.visibility = installIdx === 0 ? 'hidden' : 'visible';
+    next.textContent = installIdx === steps.length - 1 ? 'Cerrar' : 'Siguiente';
+    document.getElementById('installCounter').textContent = `Paso ${installIdx + 1} de ${steps.length}`;
+}
+
+function setInstallOS(os) {
+    installOS = os; installIdx = 0;
+    document.querySelectorAll('#installTabs .install-tab').forEach(t => t.classList.toggle('active', t.dataset.os === os));
+    const sub = document.getElementById('installSub');
+    sub.style.display = os === 'ios' ? 'flex' : 'none';
+    sub.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.ver === installIOSVer));
+    document.getElementById('installNote').innerHTML = INSTALL_NOTES[os] || '';
+    const ua = navigator.userAgent || '', here = detectPlatform() === os, warn = document.getElementById('installWarn');
+    let w = '';
+    if (here && /FBAN|FBAV|Instagram|TikTok|Snapchat|Line\/|Twitter|GSA\//.test(ua)) w = 'Estás dentro de otra app. Abrí este link en <b>' + (os === 'ios' ? 'Safari' : 'Chrome') + '</b> para poder instalarla.';
+    else if (here && os === 'ios' && /CriOS|FxiOS|EdgiOS|OPiOS/.test(ua)) w = 'Este no es Safari. Para que se instale bien y lleguen los avisos, abrí el link en <b>Safari</b>.';
+    warn.innerHTML = w; warn.style.display = w ? 'block' : 'none';
+    renderInstall(); refreshInstallUI();
+}
+
+function refreshInstallUI() {
+    const nowBtn = document.getElementById('installNowBtn');
+    if (nowBtn) nowBtn.style.display = (deferredInstallPrompt && installOS === detectPlatform() && installOS !== 'ios') ? 'flex' : 'none';
+    const b = document.getElementById('installBannerBtn');
+    if (b) b.textContent = deferredInstallPrompt ? 'Instalar' : 'Ver cómo';
+}
+async function triggerNativeInstall() {
+    const ev = deferredInstallPrompt; if (!ev) return;
+    deferredInstallPrompt = null;
+    try { ev.prompt(); const c = await ev.userChoice; if (c && c.outcome === 'accepted') { markInstallDismissed(); hideInstallBanner(); } }
+    catch (err) { console.warn('[HORAX] Instalador nativo no disponible:', err); }
+    refreshInstallUI();
 }
 
 function openInstallModal() {
-    const modal = document.getElementById('installModal');
-    if (!modal) return;
-    renderInstallSteps(detectPlatform());
+    const modal = document.getElementById('installModal'); if (!modal) return;
+    setInstallOS(detectPlatform());
+    const s = document.getElementById('installStatus');
+    s.style.display = isStandalone() ? 'block' : 'none';
+    if (isStandalone()) s.textContent = '✅ Ya estás usando HORAX como app. Esto sirve para instalarla en otro dispositivo.';
     modal.style.display = 'flex';
 }
-function closeInstallModal() {
-    const modal = document.getElementById('installModal');
-    if (modal) modal.style.display = 'none';
-}
-
-function showInstallBanner() {
-    const banner = document.getElementById('installBanner');
-    if (!banner) return;
-    banner.style.display = 'flex';
-}
-function hideInstallBanner() {
-    const banner = document.getElementById('installBanner');
-    if (banner) banner.style.display = 'none';
-}
+function closeInstallModal() { const m = document.getElementById('installModal'); if (m) m.style.display = 'none'; }
+function showInstallBanner() { const b = document.getElementById('installBanner'); if (b) { refreshInstallUI(); b.style.display = 'flex'; } }
+function hideInstallBanner() { const b = document.getElementById('installBanner'); if (b) b.style.display = 'none'; }
 
 // Se llama desde handleSignedIn() cada vez que hay usuario + local
 function maybeShowInstallBanner() {
     if (isStandalone()) { markInstallDismissed(); return; }
-    if (installDismissed()) return;
-    if (!currentUser || !currentLocalId) return;
-    setTimeout(() => {
-        if (!installDismissed() && currentUser && currentLocalId) showInstallBanner();
-    }, 1200);
+    if (installDismissed() || !currentUser || !currentLocalId) return;
+    setTimeout(() => { if (!installDismissed() && currentUser && currentLocalId) showInstallBanner(); }, 1200);
 }
 
 function initInstallPrompt() {
-    // Enganches de los botones (siempre, para que funcionen desde el perfil también)
-    const btn = document.getElementById('installBannerBtn');
-    const close = document.getElementById('installBannerClose');
-    const closeBtn = document.getElementById('installCloseBtn');
-    const modal = document.getElementById('installModal');
-    const tabs = document.querySelectorAll('#installTabs .install-tab');
+    const $ = id => document.getElementById(id);
+    if ($('installBannerBtn')) $('installBannerBtn').addEventListener('click', () => { hideInstallBanner(); if (deferredInstallPrompt) triggerNativeInstall(); else openInstallModal(); });
+    if ($('installBannerClose')) $('installBannerClose').addEventListener('click', () => { hideInstallBanner(); markInstallDismissed(); });
+    if ($('installCloseBtn')) $('installCloseBtn').addEventListener('click', closeInstallModal);
+    if ($('installNowBtn')) $('installNowBtn').addEventListener('click', triggerNativeInstall);
+    if ($('installModal')) $('installModal').addEventListener('click', ev => { if (ev.target.id === 'installModal') closeInstallModal(); });
+    document.querySelectorAll('#installTabs .install-tab').forEach(t => t.addEventListener('click', () => setInstallOS(t.dataset.os)));
+    document.querySelectorAll('#installSub button').forEach(b => b.addEventListener('click', () => { installIOSVer = b.dataset.ver; setInstallOS('ios'); }));
+    if ($('installPrev')) $('installPrev').addEventListener('click', () => { if (installIdx > 0) { installIdx--; renderInstall(); } });
+    if ($('installNext')) $('installNext').addEventListener('click', () => {
+        const n = INSTALL_STEPS[currentInstallKey()].length;
+        if (installIdx < n - 1) { installIdx++; renderInstall(); } else closeInstallModal();
+    });
 
-    if (btn) btn.addEventListener('click', () => { hideInstallBanner(); openInstallModal(); });
-    if (close) close.addEventListener('click', () => { hideInstallBanner(); markInstallDismissed(); });
-    if (closeBtn) closeBtn.addEventListener('click', closeInstallModal);
-    if (modal) modal.addEventListener('click', ev => { if (ev.target.id === 'installModal') closeInstallModal(); });
-    tabs.forEach(t => t.addEventListener('click', () => renderInstallSteps(t.dataset.os)));
-
-    // Botón "¿Cómo instalar?" dentro del modal de perfil
-    const profileModal = document.getElementById('profileModal');
-    if (profileModal && !document.getElementById('openInstallHelpBtn')) {
-        const pushGroup = document.getElementById('pushGroup');
+    const profileModal = $('profileModal');
+    if (profileModal && !$('openInstallHelpBtn')) {
+        const pushGroup = $('pushGroup');
         if (pushGroup && pushGroup.parentNode) {
-            const group = document.createElement('div');
-            group.className = 'form-group';
-            group.innerHTML = `
-                <label>Instalar en el celu</label>
-                <button type="button" class="btn-secondary" id="openInstallHelpBtn" style="width:100%;">
-                    <i class="fas fa-mobile-screen-button"></i> ¿Cómo instalar HORAX?
-                </button>`;
-            pushGroup.parentNode.insertBefore(group, pushGroup);
-            document.getElementById('openInstallHelpBtn').addEventListener('click', openInstallModal);
+            const g = document.createElement('div');
+            g.className = 'form-group';
+            g.innerHTML = `<label>Instalar en el celu</label>
+                <button type="button" class="btn-secondary" id="openInstallHelpBtn" style="width:100%;"><i class="fas fa-mobile-screen-button"></i> ¿Cómo instalar HORAX?</button>`;
+            pushGroup.parentNode.insertBefore(g, pushGroup);
+            $('openInstallHelpBtn').addEventListener('click', openInstallModal);
         }
     }
 }
-
-document.addEventListener('DOMContentLoaded', init);

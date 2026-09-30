@@ -611,12 +611,58 @@
 .install-tab i { font-size: 15px; }
 .install-tab:active { transform: scale(0.97); }
 .install-tab.active { background: var(--primary-bg); border-color: var(--primary-ink); color: var(--primary-ink); }
-.install-steps {
-    margin: 0 0 18px; padding: 0 0 0 22px; color: var(--text-secondary); font-size: 14px; line-height: 1.55;
-}
-.install-steps li { margin-bottom: 8px; }
-.install-steps li:last-child { margin-bottom: 0; }
-.install-steps b { color: var(--text); }
+.install-card { max-height: calc(100dvh - 40px); overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.install-card h2 { margin-bottom: 12px; }
+.install-sub { display: flex; gap: 6px; margin: -4px 0 12px; }
+.install-sub button { flex: 1; padding: 7px 6px; border-radius: 8px; border: 1.5px solid var(--border); background: var(--card); color: var(--text-secondary); font: 600 12px inherit; font-family: inherit; cursor: pointer; }
+.install-sub button.active { border-color: var(--primary-ink); color: var(--primary-ink); background: var(--primary-bg); }
+.install-status, .install-warn { border-radius: 10px; padding: 10px 12px; font-size: 13px; line-height: 1.45; margin-bottom: 12px; }
+.install-status { background: #ECFDF5; color: #047857; }
+.install-warn { background: #FFF7ED; color: #C2410C; }
+.install-now { width: 100%; margin-bottom: 12px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.install-counter { font-size: 12px; font-weight: 700; color: var(--primary-ink); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 8px; }
+.install-stage { min-height: 168px; background: var(--bg); border: 1px solid var(--border); border-radius: 16px; padding: 16px 14px; display: flex; flex-direction: column; justify-content: center; align-items: stretch; gap: 8px; overflow: hidden; }
+.install-dots { display: flex; justify-content: center; gap: 6px; margin: 12px 0 8px; }
+.install-dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--border); }
+.install-dots i.past { background: var(--primary-light); }
+.install-dots i.on { width: 20px; border-radius: 4px; background: var(--primary); }
+.install-text { font-size: 15px; line-height: 1.5; color: var(--text); min-height: 92px; margin: 0 0 8px; }
+.install-text small { display: block; margin-top: 6px; font-size: 12.5px; line-height: 1.45; color: var(--text-secondary); }
+.install-card .modal-actions .btn-secondary, .install-card .modal-actions .btn-submit { flex: 1; }
+.install-note { margin: 12px 0 0; padding: 10px 12px; background: var(--bg); border-radius: 10px; font-size: 12px; line-height: 1.5; color: var(--text-secondary); }
+.install-note:empty { display: none; }
+.install-close-link { display: block; margin: 10px auto 0; background: none; border: none; color: var(--text-light); font: 600 13px inherit; font-family: inherit; cursor: pointer; padding: 6px 12px; }
+/* Dibujos de pantallas del celu */
+.sc-ic { width: 20px; height: 20px; flex-shrink: 0; }
+.sc-brand { align-self: center; padding: 12px 26px; border-radius: 999px; background: var(--card); border: 1.5px solid var(--primary-ink); color: var(--primary-ink); font-weight: 700; font-size: 17px; }
+.sc-bar { display: flex; align-items: center; gap: 8px; background: var(--card); border: 1px solid var(--border); border-radius: 999px; padding: 6px 6px 6px 14px; }
+.sc-url { flex: 1; min-width: 0; font-size: 13px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sc-btn { display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 50%; background: var(--bg); color: var(--text); }
+.sc-btn.dim { opacity: .35; }
+.sc-tabbar { display: flex; justify-content: space-around; align-items: center; background: var(--card); border: 1px solid var(--border); border-radius: 18px; padding: 6px; }
+.sc-list { background: var(--card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+.sc-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 13px 14px; font-size: 14px; font-weight: 500; color: var(--text); }
+.sc-list .sc-row + .sc-row { border-top: 1px solid var(--border); }
+.sc-row.skel span { height: 9px; border-radius: 5px; background: var(--border); display: block; }
+.sc-row.hl { background: var(--primary-bg); color: var(--primary-ink); font-weight: 700; box-shadow: inset 0 0 0 2px var(--primary-ink); animation: installPulse 1.6s ease-in-out infinite; }
+.hl-wrap { display: inline-flex; border-radius: 50%; animation: installPulse 1.6s ease-in-out infinite; }
+.sc-dialog { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.sc-dhead { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--text-secondary); gap: 6px; }
+.sc-dhead b { color: var(--text); font-size: 13px; }
+.sc-dfoot { display: flex; justify-content: flex-end; align-items: center; gap: 14px; font-size: 13px; color: var(--text-secondary); }
+.sc-primary { padding: 6px 12px; border-radius: 999px; background: var(--primary); color: var(--on-primary); font-weight: 700; font-size: 13px; }
+.sc-primary.hl { animation: installPulse 1.6s ease-in-out infinite; }
+.sc-field { display: flex; align-items: center; gap: 10px; background: var(--bg); border-radius: 10px; padding: 8px 10px; font-weight: 600; font-size: 14px; color: var(--text); }
+.sc-dialog .sc-row { padding: 6px 4px; }
+.sc-switch { position: relative; width: 42px; height: 25px; border-radius: 999px; background: #34C759; flex-shrink: 0; }
+.sc-switch::after { content: ''; position: absolute; top: 2px; right: 2px; width: 21px; height: 21px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+.sc-appicon { width: 34px; height: 34px; border-radius: 9px; background: linear-gradient(135deg, var(--primary-ink), var(--primary-ink-light)); color: #fff; font-weight: 800; font-size: 15px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.sc-appicon.big { width: 64px; height: 64px; border-radius: 16px; font-size: 28px; }
+.sc-home { align-self: center; display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--text); }
+@keyframes installPulse { 0%, 100% { box-shadow: 0 0 0 2px var(--primary-ink), 0 0 0 4px rgba(var(--primary-rgb), .2); } 50% { box-shadow: 0 0 0 2px var(--primary-ink), 0 0 0 9px rgba(var(--primary-rgb), 0); } }
+.sc-row.hl { animation-name: installPulseIn; }
+@keyframes installPulseIn { 0%, 100% { box-shadow: inset 0 0 0 2px var(--primary-ink); } 50% { box-shadow: inset 0 0 0 2px var(--primary-ink), inset 0 0 0 6px rgba(var(--primary-rgb), .15); } }
+@media (prefers-reduced-motion: reduce) { .hl-wrap, .sc-primary.hl, .sc-row.hl { animation: none; } }
 
 /* ---- Zona peligrosa en Admin ---- */
 .btn-danger-soft {

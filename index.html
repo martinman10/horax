@@ -370,23 +370,34 @@
         <button class="install-banner-close" id="installBannerClose" title="Ahora no"><i class="fas fa-xmark"></i></button>
     </div>
 
-    <!-- Modal "Cómo instalar" -->
+    <!-- Modal "Cómo instalar" (un paso por pantalla) -->
     <div id="installModal" class="modal-overlay" style="display:none;">
-        <div class="modal-card">
+        <div class="modal-card install-card">
             <h2><i class="fas fa-mobile-screen-button" style="color:var(--primary-ink);margin-right:8px;"></i>Cómo instalar HORAX</h2>
-            <p class="modal-hint">Elegí tu celular y seguí los pasos. Se hace una sola vez.</p>
-
             <div class="install-tabs" id="installTabs">
                 <button class="install-tab" data-os="ios"><i class="fab fa-apple"></i> iPhone</button>
                 <button class="install-tab" data-os="android"><i class="fab fa-android"></i> Android</button>
                 <button class="install-tab" data-os="desktop"><i class="fas fa-desktop"></i> Compu</button>
             </div>
-
-            <ol class="install-steps" id="installSteps"></ol>
-
-            <div class="modal-actions">
-                <button class="btn-secondary" id="installCloseBtn">Cerrar</button>
+            <div class="install-sub" id="installSub" style="display:none;">
+                <button data-ver="26">iOS 26 o más nuevo</button>
+                <button data-ver="18">iOS 18 o anterior</button>
             </div>
+            <div id="installStatus" class="install-status" style="display:none;"></div>
+            <div id="installWarn" class="install-warn" style="display:none;"></div>
+            <button type="button" class="btn-submit install-now" id="installNowBtn" style="display:none;">
+                <i class="fas fa-download"></i> Instalar ahora
+            </button>
+            <div class="install-counter" id="installCounter"></div>
+            <div class="install-stage" id="installStage"></div>
+            <div class="install-dots" id="installDots"></div>
+            <p class="install-text" id="installText"></p>
+            <div class="modal-actions">
+                <button class="btn-secondary" id="installPrev">Atrás</button>
+                <button class="btn-submit" id="installNext">Siguiente</button>
+            </div>
+            <p class="install-note" id="installNote"></p>
+            <button type="button" class="install-close-link" id="installCloseBtn">Cerrar</button>
         </div>
     </div>
 
