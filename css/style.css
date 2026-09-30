@@ -687,3 +687,22 @@
 .sc-homeimg { width: 64px; height: 64px; border-radius: 16px; }
 .install-h { display: block; font-size: 17px; font-weight: 700; margin-bottom: 4px; }
 @media (prefers-reduced-motion: reduce) { .shot-hl { animation: none; } }
+
+/* Tutorial de instalación: tarjeta de alto fijo, así "Atrás/Siguiente" quedan siempre en el mismo lugar */
+.install-card { position: relative; display: flex; flex-direction: column; height: min(700px, calc(100dvh - 40px)); max-height: none; overflow: hidden; padding-bottom: 16px; }
+.install-card h2 { flex: none; font-size: 16px; padding-right: 36px; margin-bottom: 12px; }
+.install-x { position: absolute; top: 14px; right: 14px; width: 32px; height: 32px; border: none; border-radius: 50%; background: var(--bg); color: var(--text-secondary); font-size: 15px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.install-card .install-tabs, .install-card .install-sub, .install-card .install-status, .install-card .install-warn, .install-card .install-now { flex: none; }
+.install-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; touch-action: pan-y; }
+.install-meta { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.install-meta .install-counter, .install-meta .install-dots { margin: 0; }
+.install-stage { height: 250px; min-height: 0; padding: 10px; }
+.install-stage .shot img { max-height: 196px; }
+.install-text { min-height: 112px; margin: 12px 0 0; }
+.install-card .modal-actions { flex: none; margin-top: 12px; }
+.install-note { margin: 12px 0 0; }
+#installSlide.slide-in-r { animation: installSlideR .25s ease-out; }
+#installSlide.slide-in-l { animation: installSlideL .25s ease-out; }
+@keyframes installSlideR { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
+@keyframes installSlideL { from { opacity: 0; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { #installSlide.slide-in-r, #installSlide.slide-in-l { animation: none; } }

@@ -373,6 +373,7 @@
     <!-- Modal "Cómo instalar" (un paso por pantalla) -->
     <div id="installModal" class="modal-overlay" style="display:none;">
         <div class="modal-card install-card">
+            <button type="button" class="install-x" id="installCloseBtn" aria-label="Cerrar"><i class="fas fa-xmark"></i></button>
             <h2><i class="fas fa-mobile-screen-button" style="color:var(--primary-ink);margin-right:8px;"></i>Cómo instalar HORAX</h2>
             <div class="install-tabs" id="installTabs">
                 <button class="install-tab" data-os="ios"><i class="fab fa-apple"></i> iPhone</button>
@@ -388,16 +389,21 @@
             <button type="button" class="btn-submit install-now" id="installNowBtn" style="display:none;">
                 <i class="fas fa-download"></i> Instalar ahora
             </button>
-            <div class="install-counter" id="installCounter"></div>
-            <div class="install-stage" id="installStage"></div>
-            <div class="install-dots" id="installDots"></div>
-            <p class="install-text" id="installText"></p>
+            <div class="install-body" id="installBody">
+                <div class="install-meta">
+                    <div class="install-counter" id="installCounter"></div>
+                    <div class="install-dots" id="installDots"></div>
+                </div>
+                <div id="installSlide">
+                    <div class="install-stage" id="installStage"></div>
+                    <p class="install-text" id="installText"></p>
+                </div>
+                <p class="install-note" id="installNote"></p>
+            </div>
             <div class="modal-actions">
                 <button class="btn-secondary" id="installPrev">Atrás</button>
                 <button class="btn-submit" id="installNext">Siguiente</button>
             </div>
-            <p class="install-note" id="installNote"></p>
-            <button type="button" class="install-close-link" id="installCloseBtn">Cerrar</button>
         </div>
     </div>
 

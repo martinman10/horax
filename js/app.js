@@ -3681,31 +3681,30 @@ function refreshPushUi() {
     }
 }
 
-// ---- Primer ingreso desde la app instalada: ofrecer activar los avisos ----
-// El permiso del navegador solo se puede pedir desde un toque del usuario (iPhone lo exige),
-// por eso primero se muestra este cartel y el permiso se pide al tocar "Activar".
-const PUSH_ASKED_KEY = 'horax_push_asked_v1_';
-function pushAsked() { try { return !!currentUser && localStorage.getItem(PUSH_ASKED_KEY + currentUser.uid) === '1'; } catch (_) { return false; } }
-function markPushAsked() { try { if (currentUser) localStorage.setItem(PUSH_ASKED_KEY + currentUser.uid, '1'); } catch (_) {} }
+// ---- App instalada (PWA): cada vez que se abre y los avisos NO están activados, se ofrece activarlos ----
+// El permiso del navegador solo se puede pedir desde un toque (iPhone lo exige): se pide al tocar "Activar".
+let pushPromptClosed = false; // la X lo oculta solo hasta la próxima vez que se abra la app
 function hidePushPrompt() { const b = document.getElementById('pushPrompt'); if (b) b.remove(); }
-function maybeShowPushPrompt() {
-    if (!isStandalone() || !currentUser || !currentLocalId || pushAsked()) return;
+function maybeShowPushPrompt(tries = 0) {
+    if (!isStandalone() || !currentUser || !currentLocalId || pushPromptClosed) return;
     setTimeout(() => {
-        if (document.getElementById('pushPrompt') || pushAsked() || !currentUser) return;
-        if (!pushSupported() || !pushConfigured() || Notification.permission === 'denied' || getSavedPushToken()) return;
+        if (document.getElementById('pushPrompt') || pushPromptClosed || !currentUser) return;
+        if (!pushSupported() || !pushConfigured() || getSavedPushToken()) return;
         const pm = document.getElementById('profileModal');
-        if (pm && getComputedStyle(pm).display !== 'none') return; // está eligiendo su nombre: se pregunta la próxima vez
+        if (pm && getComputedStyle(pm).display !== 'none') { if (tries < 5) maybeShowPushPrompt(tries + 1); return; } // está eligiendo su nombre
+        const denied = Notification.permission === 'denied';
         const b = document.createElement('div');
         b.id = 'pushPrompt'; b.className = 'install-banner';
-        b.innerHTML = `<div class="install-banner-icon"><i class="fas fa-bell"></i></div>
-            <div class="install-banner-text"><strong>¿Activamos los avisos?</strong>
-            <small>Te avisamos la mañana de cada día que haya extras pendientes.</small></div>
-            <button class="install-banner-cta" id="pushPromptYes">Activar</button>
+        b.innerHTML = `<div class="install-banner-icon"><i class="fas fa-bell${denied ? '-slash' : ''}"></i></div>
+            <div class="install-banner-text"><strong>${denied ? 'Los avisos están bloqueados' : '¿Activamos los avisos?'}</strong>
+            <small>${denied ? 'Activalos desde los ajustes del celular (Notificaciones → HORAX).' : 'Te avisamos la mañana de cada día que haya extras pendientes.'}</small></div>
+            ${denied ? '' : '<button class="install-banner-cta" id="pushPromptYes">Activar</button>'}
             <button class="install-banner-close" id="pushPromptNo" title="Ahora no"><i class="fas fa-xmark"></i></button>`;
         document.body.appendChild(b);
+        const yes = document.getElementById('pushPromptYes');
         // enablePush() se llama directo desde el toque: así el permiso se puede pedir también en iPhone
-        document.getElementById('pushPromptYes').addEventListener('click', () => { markPushAsked(); hidePushPrompt(); enablePush(); });
-        document.getElementById('pushPromptNo').addEventListener('click', () => { markPushAsked(); hidePushPrompt(); });
+        if (yes) yes.addEventListener('click', () => { hidePushPrompt(); enablePush(); });
+        document.getElementById('pushPromptNo').addEventListener('click', () => { pushPromptClosed = true; hidePushPrompt(); });
     }, 2500);
 }
 
@@ -3937,7 +3936,7 @@ let deferredInstallPrompt = null, installOS = null, installIOSVer = '26', instal
 
 window.addEventListener('beforeinstallprompt', ev => { ev.preventDefault(); deferredInstallPrompt = ev; refreshInstallUI(); });
 window.addEventListener('appinstalled', () => {
-    deferredInstallPrompt = null; markInstallDismissed(); hideInstallBanner(); closeInstallModal();
+    deferredInstallPrompt = null; markInstallDismissed(true); hideInstallBanner(); closeInstallModal();
     if (typeof showToast === 'function') showToast('¡HORAX instalada! Abrila desde el ícono ✨', 4500);
 });
 
@@ -3951,8 +3950,9 @@ function detectPlatform() {
     if ((/iPad|iPhone|iPod/.test(ua) && !window.MSStream) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) return 'ios';
     return /Android/.test(ua) ? 'android' : 'desktop';
 }
-function installDismissed() { try { return localStorage.getItem(INSTALL_DISMISSED_KEY) === '1'; } catch (_) { return false; } }
-function markInstallDismissed() { try { localStorage.setItem(INSTALL_DISMISSED_KEY, '1'); } catch (_) {} }
+// 'installed' = ya se instaló desde este navegador (solo se respeta fuera de iPhone: en iPhone Safari no puede saberlo)
+function installDismissed() { try { return localStorage.getItem(INSTALL_DISMISSED_KEY) === 'installed'; } catch (_) { return false; } }
+function markInstallDismissed(installed) { try { if (installed) localStorage.setItem(INSTALL_DISMISSED_KEY, 'installed'); } catch (_) {} }
 
 // ---- Íconos (SVG, no dependen de Font Awesome) ----
 const IC = {
@@ -4049,7 +4049,7 @@ const INSTALL_NOTES = {
 
 function currentInstallKey() { return installOS === 'ios' ? 'ios' + installIOSVer : installOS; }
 
-function renderInstall() {
+function renderInstall(dir) {
     const steps = INSTALL_STEPS[currentInstallKey()], st = steps[installIdx];
     const stage = document.getElementById('installStage');
     stage.innerHTML = st.p ? st.p() : st.s();
@@ -4062,6 +4062,13 @@ function renderInstall() {
     prev.style.visibility = installIdx === 0 ? 'hidden' : 'visible';
     next.textContent = installIdx === steps.length - 1 ? 'Cerrar' : 'Siguiente';
     document.getElementById('installCounter').textContent = `Paso ${installIdx + 1} de ${steps.length}`;
+    const sl = document.getElementById('installSlide');
+    if (sl && dir) { sl.classList.remove('slide-in-r', 'slide-in-l'); void sl.offsetWidth; sl.classList.add(dir > 0 ? 'slide-in-r' : 'slide-in-l'); }
+}
+function installGo(delta) {
+    const n = INSTALL_STEPS[currentInstallKey()].length, ni = installIdx + delta;
+    if (ni < 0 || ni >= n) return;
+    installIdx = ni; renderInstall(delta);
 }
 
 function setInstallOS(os) {
@@ -4084,11 +4091,13 @@ function refreshInstallUI() {
     if (nowBtn) nowBtn.style.display = (deferredInstallPrompt && installOS === detectPlatform() && installOS !== 'ios') ? 'flex' : 'none';
     const b = document.getElementById('installBannerBtn');
     if (b) b.textContent = deferredInstallPrompt ? 'Instalar' : 'Ver cómo';
+    const hb = document.getElementById('openInstallHelpBtn');
+    if (hb) hb.innerHTML = deferredInstallPrompt ? '<i class="fas fa-download"></i> Instalar HORAX ahora' : '<i class="fas fa-mobile-screen-button"></i> ¿Cómo instalar HORAX?';
 }
 async function triggerNativeInstall() {
     const ev = deferredInstallPrompt; if (!ev) return;
     deferredInstallPrompt = null;
-    try { ev.prompt(); const c = await ev.userChoice; if (c && c.outcome === 'accepted') { markInstallDismissed(); hideInstallBanner(); } }
+    try { ev.prompt(); const c = await ev.userChoice; if (c && c.outcome === 'accepted') { markInstallDismissed(true); hideInstallBanner(); } }
     catch (err) { console.warn('[HORAX] Instalador nativo no disponible:', err); }
     refreshInstallUI();
 }
@@ -4106,25 +4115,40 @@ function showInstallBanner() { const b = document.getElementById('installBanner'
 function hideInstallBanner() { const b = document.getElementById('installBanner'); if (b) b.style.display = 'none'; }
 
 // Se llama desde handleSignedIn() cada vez que hay usuario + local
+let installBannerClosed = false; // la X lo oculta solo hasta que se vuelva a abrir la app
 function maybeShowInstallBanner() {
-    if (isStandalone()) { markInstallDismissed(); return; }
-    if (installDismissed() || !currentUser || !currentLocalId) return;
-    setTimeout(() => { if (!installDismissed() && currentUser && currentLocalId) showInstallBanner(); }, 1200);
+    if (isStandalone()) { markInstallDismissed(true); return; }
+    if (!currentUser || !currentLocalId || installBannerClosed) return;
+    if (detectPlatform() !== 'ios' && installDismissed()) return;
+    setTimeout(() => { if (!installBannerClosed && currentUser && currentLocalId && !isStandalone()) showInstallBanner(); }, 1200);
 }
 
 function initInstallPrompt() {
     const $ = id => document.getElementById(id);
     if ($('installBannerBtn')) $('installBannerBtn').addEventListener('click', () => { hideInstallBanner(); if (deferredInstallPrompt) triggerNativeInstall(); else openInstallModal(); });
-    if ($('installBannerClose')) $('installBannerClose').addEventListener('click', () => { hideInstallBanner(); markInstallDismissed(); });
+    if ($('installBannerClose')) $('installBannerClose').addEventListener('click', () => { hideInstallBanner(); installBannerClosed = true; });
     if ($('installCloseBtn')) $('installCloseBtn').addEventListener('click', closeInstallModal);
     if ($('installNowBtn')) $('installNowBtn').addEventListener('click', triggerNativeInstall);
     if ($('installModal')) $('installModal').addEventListener('click', ev => { if (ev.target.id === 'installModal') closeInstallModal(); });
     document.querySelectorAll('#installTabs .install-tab').forEach(t => t.addEventListener('click', () => setInstallOS(t.dataset.os)));
     document.querySelectorAll('#installSub button').forEach(b => b.addEventListener('click', () => { installIOSVer = b.dataset.ver; setInstallOS('ios'); }));
-    if ($('installPrev')) $('installPrev').addEventListener('click', () => { if (installIdx > 0) { installIdx--; renderInstall(); } });
+    if ($('installPrev')) $('installPrev').addEventListener('click', () => installGo(-1));
     if ($('installNext')) $('installNext').addEventListener('click', () => {
-        const n = INSTALL_STEPS[currentInstallKey()].length;
-        if (installIdx < n - 1) { installIdx++; renderInstall(); } else closeInstallModal();
+        if (installIdx < INSTALL_STEPS[currentInstallKey()].length - 1) installGo(1); else closeInstallModal();
+    });
+    // Deslizar con el dedo entre pasos: hacia la izquierda = siguiente, hacia la derecha = anterior
+    const swipeArea = $('installBody'); let sx = 0, sy = 0, swiping = false;
+    if (swipeArea) {
+        swipeArea.addEventListener('touchstart', e => { const t = e.touches[0]; sx = t.clientX; sy = t.clientY; swiping = e.touches.length === 1; }, { passive: true });
+        swipeArea.addEventListener('touchend', e => {
+            if (!swiping) return; swiping = false;
+            const t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy;
+            if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) installGo(dx < 0 ? 1 : -1);
+        }, { passive: true });
+    }
+    document.addEventListener('keydown', e => {
+        const m = $('installModal'); if (!m || m.style.display === 'none' || document.querySelector('.shot-zoom')) return;
+        if (e.key === 'ArrowRight') installGo(1); else if (e.key === 'ArrowLeft') installGo(-1); else if (e.key === 'Escape') closeInstallModal();
     });
 
     const profileModal = $('profileModal');
@@ -4136,7 +4160,8 @@ function initInstallPrompt() {
             g.innerHTML = `<label>Instalar en el celu</label>
                 <button type="button" class="btn-secondary" id="openInstallHelpBtn" style="width:100%;"><i class="fas fa-mobile-screen-button"></i> ¿Cómo instalar HORAX?</button>`;
             pushGroup.parentNode.insertBefore(g, pushGroup);
-            $('openInstallHelpBtn').addEventListener('click', openInstallModal);
+            $('openInstallHelpBtn').addEventListener('click', () => { if (deferredInstallPrompt) triggerNativeInstall(); else openInstallModal(); });
+            refreshInstallUI();
         }
     }
 }
