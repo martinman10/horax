@@ -59,14 +59,11 @@
         <!-- HEADER -->
         <header class="app-header">
             <div class="logo profile-chip" id="profileChip" role="button" tabindex="0" title="Mi perfil (nombre y color)">
-                <i class="fas fa-users" id="profileIcon"></i>
+                <span class="hd-avatar-wrap"><span class="hd-avatar" id="profileIcon" aria-hidden="true"><i class="fas fa-users"></i></span><span class="hd-avatar-edit" aria-hidden="true"><i class="fas fa-pen"></i></span></span>
                 <span class="logo-text">
                     <h1 id="headerTitle">HORAX</h1>
                     <span class="logo-sub" id="headerSubtitle" style="display:none;">HORAX · tu perfil</span>
                 </span>
-            </div>
-            <div class="header-actions">
-                <button id="clearBtn" title="Vaciar el mes"><i class="fas fa-trash-alt"></i></button>
             </div>
         </header>
 
@@ -80,6 +77,7 @@
                     <button id="nextMonth"><i class="fas fa-chevron-right"></i></button>
                 </div>
                 <div class="calendar-grid" id="calendarGrid"></div>
+                <div class="cal-legend" id="calLegend"></div>
                 <div class="day-detail" id="dayDetail">
                     <div class="day-detail-header">
                         <h3 id="detailDayName">Seleccioná un día</h3>
@@ -91,6 +89,7 @@
                             <p>Tocá un día con <strong>●</strong> para ver sus extras</p>
                         </div>
                     </div>
+                    <button type="button" class="day-add-btn" id="dayAddBtn"><i class="fas fa-plus"></i> Agregar extra este día</button>
                 </div>
             </div>
 
@@ -119,12 +118,14 @@
                     </button>
                 </div>
 
-                <p style="font-size:12px;color:var(--text-light);margin-top:8px;">
-                    Los datos se cargan desde el PDF o una foto. Usá el tab "Importar" para cargarlos.
-                </p>
-                <button class="btn-secondary audit-open-btn" id="viewAuditBtn">
-                    <i class="fas fa-clock-rotate-left"></i> Ver historial de cambios
-                </button>
+                <div class="summary-footer">
+                    <button type="button" class="link-btn" id="viewAuditBtn">
+                        <i class="fas fa-clock-rotate-left"></i> Ver historial de cambios
+                    </button>
+                    <button type="button" class="link-btn danger" id="clearBtn" style="display:none;">
+                        <i class="fas fa-trash-alt"></i> <span id="clearBtnLabel">Vaciar este período</span>
+                    </button>
+                </div>
             </div>
 
             <!-- TAB ADD -->
@@ -147,7 +148,8 @@
                     </div>
                     <div class="form-group">
                         <label>Persona</label>
-                        <input type="text" id="addPerson" placeholder="Nombre" list="personList" />
+                        <input type="text" id="addPerson" placeholder="Nombre" autocomplete="off" autocapitalize="words" />
+                        <div class="person-chips" id="personChips"></div>
                         <datalist id="personList"></datalist>
                     </div>
                     <div class="form-group">
