@@ -7,7 +7,7 @@
                Los calcula applyTheme() en app.js según el color elegido en el perfil. */
             --primary-ink: #6C63FF; --primary-ink-light: #8B83FF;
             --on-primary: #FFFFFF; --primary-rgb: 108, 99, 255;
-            --text: #1A1A2E; --text-secondary: #4B5563; --text-light: #6B7280;
+            --text: #1A1A2E; --text-secondary: #4B5563; --text-light: #6B7280; --text-faint: #9CA3AF;
             --border: #E5E7EB; --shadow: 0 8px 30px rgba(var(--primary-rgb), 0.12);
             --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06);
             --radius: 20px; --radius-sm: 12px;
@@ -120,7 +120,7 @@
             padding: 4px 12px; border-radius: 20px;
         }
         .day-detail .empty-state { text-align: center; padding: 24px 0; color: var(--text-light); font-size: 14px; }
-        .day-detail .empty-state i { display: block; font-size: 32px; margin-bottom: 8px; opacity: 0.5; }
+        .day-detail .empty-state i { display: block; font-size: 32px; margin-bottom: 8px; color: var(--text-faint); opacity: 0.7; }
         .ot-item {
             display: flex; align-items: center; gap: 12px; padding: 10px 12px;
             background: var(--bg); border-radius: var(--radius-sm); margin-bottom: 6px;
@@ -236,7 +236,7 @@
         }
         .fab-add:active { transform: scale(0.88); }
         .empty-state { text-align: center; padding: 40px 0; color: var(--text-light); }
-        .empty-state i { font-size: 40px; display: block; margin-bottom: 12px; opacity: 0.3; }
+        .empty-state i { font-size: 40px; display: block; margin-bottom: 12px; color: var(--text-faint); opacity: 0.6; }
         .mt-16 { margin-top: 16px; }
         .text-center { text-align: center; }
         .flex-between { display: flex; justify-content: space-between; align-items: center; }
@@ -251,7 +251,7 @@
         .pdf-zone.processing { opacity: 0.6; pointer-events: none; }
         .pdf-zone.processing i { animation: horax-spin 1s linear infinite; }
         @keyframes horax-spin { to { transform: rotate(360deg); } }
-        .pdf-zone i { font-size: 48px; color: var(--text-light); margin-bottom: 12px; }
+        .pdf-zone i { font-size: 48px; color: var(--text-faint); margin-bottom: 12px; }
         .pdf-zone p { color: var(--text-secondary); font-size: 14px; }
         .pdf-zone input[type="file"] { display: none; }
         .pdf-preview {
@@ -726,7 +726,7 @@
 :root[data-theme="dark"] {
     color-scheme: dark;
     --bg: #12131C; --card: #1C1D2A;
-    --text: #ECEDF4; --text-secondary: #A4A8B8; --text-light: #8F94A8;
+    --text: #ECEDF4; --text-secondary: #A4A8B8; --text-light: #8F94A8; --text-faint: #5F6478;
     --border: #2E3042;
     --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
@@ -909,3 +909,11 @@
 .link-btn.danger { color: #DC2626; }
 [data-theme="dark"] .link-btn.danger { color: #F87171; }
 .empty-state .empty-hint { font-size: 13px; margin-top: 4px; opacity: 0.9; }
+
+
+/* ---- Pulidos ---- */
+.summary-filter.no-search .filter-pill { flex: 1; justify-content: center; }
+.summary-footer { padding-bottom: 28px; }
+.person-chip .p-dot { margin-right: 0; border: 1.5px solid rgba(0, 0, 0, 0.3); border-color: color-mix(in srgb, var(--text) 35%, transparent); }
+.app-header .logo .hd-avatar-edit { width: 15px; height: 15px; right: -6px; bottom: -4px; }
+.app-header .logo .hd-avatar-edit i { font-size: 7px; }
