@@ -1504,7 +1504,7 @@ function renderDayDetail(dateStr) {
                     ${e.done ? '<i class="fas fa-check"></i>' : ''}
                 </div>
                 <div class="ot-info">
-                    <div class="ot-person" style="color:${color};">${escapeHtml(e.person)}</div>
+                    <div class="ot-person"><span class="p-dot" style="background:${color};"></span>${escapeHtml(e.person)}</div>
                     <div class="ot-time">${e.start} - ${e.end}</div>
                     ${e.comment ? `<div class="ot-comment"><i class="fas fa-comment-dots"></i> ${escapeHtml(e.comment)}</div>` : ''}
                 </div>
@@ -1731,7 +1731,7 @@ function renderSummary() {
             const idx = summary.indexOf(row);
             const open = expandedPeople.has(row.person);
             html += `<tr class="sum-row ${open ? 'open' : ''}" data-idx="${idx}">
-                <td class="person-name" style="color:${color};"><i class="fas fa-chevron-right sum-arrow"></i>${escapeHtml(row.person)}</td>
+                <td class="person-name"><i class="fas fa-chevron-right sum-arrow"></i><span class="p-dot" style="background:${color};"></span>${escapeHtml(row.person)}</td>
                 <td>${fmtDurShort(row.total)}</td>
                 <td><span class="badge badge-done">${fmtDurShort(row.done)}</span></td>
                 <td><span class="badge badge-pending">${fmtDurShort(row.total - row.done)}</span></td>
