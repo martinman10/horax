@@ -993,6 +993,12 @@ function applyProfileToHeader() {
     const chip = document.getElementById('profileChip');
 
     if (title) title.textContent = name || 'HORAX';
+    const av = document.getElementById('profileIcon');
+    if (av) {
+        const ini = ((userProfile && userProfile.firstName || '').trim()[0] || '') + ((userProfile && userProfile.lastName || '').trim()[0] || '');
+        if (ini) av.textContent = ini.toUpperCase();
+        else av.innerHTML = '<i class="fas fa-users"></i>';
+    }
     if (sub) sub.style.display = name ? 'block' : 'none';
     if (chip) chip.title = name ? 'Mi perfil (nombre y color)' : 'HORAX';
 }
@@ -1394,6 +1400,36 @@ function getPeople() {
     for (const e of overtimeData) set.add(e.person);
     return Array.from(set).sort((a,b) => a.localeCompare(b, 'es'));
 }
+// Chips de personas en "Agregar": un toque en vez de escribir el nombre
+function renderPersonChips() {
+    const box = document.getElementById('personChips');
+    if (!box) return;
+    const input = document.getElementById('addPerson');
+    const people = getPeople();
+    box.style.display = people.length ? 'flex' : 'none';
+    const cur = normalizeText(input ? input.value.trim() : '');
+    box.innerHTML = people.map(p => {
+        const color = getEmployeeColor(p);
+        const on = cur !== '' && normalizeText(p) === cur;
+        return `<button type="button" class="person-chip${on ? ' active' : ''}" data-person="${escapeHtml(p)}">${personDotHtml(color)}${escapeHtml(p)}</button>`;
+    }).join('');
+}
+// Si escribió un nombre casi igual a uno existente (ej. "Martin" y "Martín"), le preguntamos
+async function resolveSimilarPerson(typed) {
+    const key = normalizeText(typed.trim());
+    const people = getPeople();
+    if (people.includes(typed)) return typed;
+    const similar = people.filter(p => normalizeText(p) === key);
+    if (similar.length !== 1) return typed;
+    const useExisting = await showConfirm({
+        title: '¿Es la misma persona?',
+        message: `Ya hay extras cargadas para "${similar[0]}". ¿Usás ese nombre o guardás "${typed}" como otra persona?`,
+        okText: `Usar "${similar[0]}"`,
+        cancelText: `Guardar "${typed}"`
+    });
+    return useExisting ? similar[0] : typed;
+}
+
 function toggleDone(id) {
     const entry = overtimeData.find(e => e.id === id);
     if (entry) { entry.done = !entry.done; saveData(); renderAll(); }
@@ -1473,6 +1509,11 @@ function renderCalendar() {
         const st = getDayStatus(ds);
         return 'day-cell other-month has-overtime' + (st === 'done' ? ' done' : st === 'pending' ? ' pending' : '');
     };
+    const otherClsC = ds => otherCls(ds) + cycCls(ds);
+
+    // Período del Resumen que corresponde a este mes (ej. Octubre = 26/9 al 25/10)
+    const cyc = getSummaryRange(currentYear, currentMonth);
+    const cycCls = ds => (ds >= cyc.start && ds <= cyc.end) ? ' in-cycle' : ' out-cycle';
 
     let html = '';
     for (const n of ['L','M','M','J','V','S','D']) html += `<div class="day-name">${n}</div>`;
@@ -1482,7 +1523,7 @@ function renderCalendar() {
         const day = daysInPrev - i;
         const dateObj = new Date(currentYear, currentMonth - 1, day);
         const ds = formatDate(dateObj);
-        html += `<button class="${otherCls(ds)}" data-date="${ds}">${day}</button>`;
+        html += `<button class="${otherClsC(ds)}" data-date="${ds}">${day}</button>`;
     }
     for (let d = 1; d <= daysInMonth; d++) {
         const dateObj = new Date(currentYear, currentMonth, d);
@@ -1491,7 +1532,7 @@ function renderCalendar() {
         const status = getDayStatus(dateStr);
         const isToday = dateStr === todayStr;
         const isSelected = dateStr === selectedDate;
-        let cls = 'day-cell';
+        let cls = 'day-cell' + cycCls(dateStr);
         if (isToday) cls += ' today';
         if (hasOT) cls += ' has-overtime';
         if (status === 'done') cls += ' done';
@@ -1504,9 +1545,16 @@ function renderCalendar() {
     for (let d = 1; d <= remaining; d++) {
         const dateObj = new Date(currentYear, currentMonth + 1, d);
         const ds = formatDate(dateObj);
-        html += `<button class="${otherCls(ds)}" data-date="${ds}">${d}</button>`;
+        html += `<button class="${otherClsC(ds)}" data-date="${ds}">${d}</button>`;
     }
     grid.innerHTML = html;
+    const legend = document.getElementById('calLegend');
+    if (legend) {
+        const cycName = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+        legend.innerHTML = `<span class="lg"><i class="lg-dot pending"></i>Pendiente</span>`
+            + `<span class="lg"><i class="lg-dot done"></i>Hecha</span>`
+            + `<span class="lg-cycle">Resumen de ${cycName}: ${fmtDM(cyc.start)} al ${fmtDM(cyc.end)}</span>`;
+    }
     renderTodayBarCalendar();
 
     grid.querySelectorAll('.day-cell').forEach(el => {
@@ -1735,8 +1783,10 @@ function normalizeText(t) {
     return String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 }
 
+let summaryPeopleCount = 0;
 function renderSummary() {
     summaryRows = [];
+    summaryPeopleCount = 0;
     const container = document.getElementById('summaryContainer');
     const range = getSummaryRange(summaryYear, summaryMonth);
     const monthName = new Date(summaryYear, summaryMonth, 1)
@@ -1756,7 +1806,7 @@ function renderSummary() {
 
     const entries = getEntriesForSummary();
     if (entries.length === 0) {
-        html += `<div class="empty-state"><i class="fas fa-chart-simple"></i><p>No hay extras en este período</p></div>`;
+        html += `<div class="empty-state"><i class="fas fa-chart-simple"></i><p>No hay extras en este período</p><p class="empty-hint">Cargalas desde Agregar o Importar.</p></div>`;
     } else {
         const byPerson = new Map();
         for (const e of entries) {
@@ -1767,6 +1817,7 @@ function renderSummary() {
             if (e.done) p.done += h;
             byPerson.set(e.person, p);
         }
+        summaryPeopleCount = byPerson.size;
         const summaryAll = Array.from(byPerson.values())
             .sort((a, b) => b.total - a.total || a.person.localeCompare(b.person, 'es'));
 
@@ -1829,6 +1880,17 @@ function renderSummary() {
     // El buscador solo se muestra si el período tiene extras
     const filterBar = document.getElementById('summaryFilterBar');
     if (filterBar) filterBar.style.display = entries.length > 0 ? 'flex' : 'none';
+    // Con pocas personas el buscador sobra: solo aparece si hay más de 5 (o si ya hay algo escrito)
+    const searchBox = filterBar && filterBar.querySelector('.summary-search');
+    if (searchBox) searchBox.style.display = (summaryPeopleCount > 5 || summaryFilter.trim() !== '') ? '' : 'none';
+
+    // "Vaciar período": link discreto al final del Resumen, solo si hay algo para borrar
+    const clearBtn = document.getElementById('clearBtn');
+    if (clearBtn) {
+        clearBtn.style.display = entries.length > 0 ? 'inline-flex' : 'none';
+        const lbl = document.getElementById('clearBtnLabel');
+        if (lbl) lbl.textContent = `Vaciar este período (${fmtDM(range.start)} al ${fmtDM(range.end)})`;
+    }
 
     // ★ NUEVO (#5): mostrar u ocultar los botones de exportar según si hay datos
     const exportRow = document.getElementById('exportRow');
@@ -2249,6 +2311,7 @@ function renderAll() {
     renderSummary();
     const datalist = document.getElementById('personList');
     if (datalist) datalist.innerHTML = getPeople().map(p => `<option value="${escapeHtml(p)}">`).join('');
+    renderPersonChips();
     updateBadges();
     renderUndoImport();
 }
@@ -2314,7 +2377,6 @@ function switchTab(tabId) {
     document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
     const b = document.querySelector(`.tab-btn[data-tab="${tabId}"]`); if (b) b.classList.add('active');
     currentTab = tabId;
-    const cb = document.getElementById('clearBtn'); if (cb) cb.title = tabId === 'tabSummary' ? 'Vaciar el período del Resumen' : 'Vaciar el mes';
     if (tabId === 'tabSummary') renderSummary();
     if (tabId === 'tabCalendar') renderCalendar();
     if (tabId === 'tabAdmin') renderAdminPanel();
@@ -3998,22 +4060,37 @@ function init() {
             if (tab) switchTab(tab);
         });
     });
-    document.getElementById('addSubmitBtn').addEventListener('click', () => {
+    const addPersonInput = document.getElementById('addPerson');
+    const personChipsBox = document.getElementById('personChips');
+    if (personChipsBox && addPersonInput) {
+        personChipsBox.addEventListener('click', ev => {
+            const chip = ev.target.closest('.person-chip');
+            if (!chip) return;
+            addPersonInput.value = chip.dataset.person;
+            renderPersonChips();
+        });
+        addPersonInput.addEventListener('input', renderPersonChips);
+    }
+    const dayAddBtn = document.getElementById('dayAddBtn');
+    if (dayAddBtn) dayAddBtn.addEventListener('click', () => switchTab('tabAdd'));
+
+    document.getElementById('addSubmitBtn').addEventListener('click', async () => {
         const date = document.getElementById('addDate').value;
         const start = document.getElementById('addStart').value;
         const end = document.getElementById('addEnd').value;
-        const person = document.getElementById('addPerson').value.trim();
+        let person = document.getElementById('addPerson').value.trim();
         const commentEl = document.getElementById('addComment');
         const comment = commentEl ? commentEl.value.trim() : '';
         if (!date || !start || !end || !person) { showToast('Completá todos los campos'); return; }
         if (start >= end) { showToast('El inicio debe ser anterior al final'); return; }
+        person = await resolveSimilarPerson(person);
         addEntry(date, start, end, person, comment);
         document.getElementById('addPerson').value = '';
         if (commentEl) commentEl.value = '';
         selectedDate = date;
         switchTab('tabCalendar');
     });
-        // El tacho del header ahora borra SOLO el mes del calendario
+        // "Vaciar este período" vive al final del Resumen y borra lo que ese Resumen muestra
     document.getElementById('clearBtn').addEventListener('click', clearMonth);
     // El botón de Admin sí borra todo (queda como válvula de escape)
     const clearAllBtn = document.getElementById('clearAllBtn');
@@ -4289,7 +4366,7 @@ function refreshInstallUI() {
         const t = hb.querySelector('.pf-row-title'), sub = hb.querySelector('.pf-row-sub'), ic = hb.querySelector('.pf-row-ic i');
         const can = !!deferredInstallPrompt;
         if (t) t.textContent = can ? 'Instalar HORAX ahora' : (isStandalone() ? 'Instalar en otro celu' : '¿Cómo instalar HORAX?');
-        if (sub) sub.textContent = isStandalone() ? 'Ya la usás como app en este dispositivo.' : 'Tenela en la pantalla de inicio.';
+        if (sub) sub.textContent = isStandalone() ? 'Acá ya está instalada. Mirá los pasos para otro celu.' : 'Tenela en la pantalla de inicio.';
         if (ic) ic.className = can ? 'fas fa-download' : 'fas fa-mobile-screen-button';
     }
 }
