@@ -1543,6 +1543,7 @@ function fmtHours(h) { return String(Math.round(h * 100) / 100).replace('.', ','
 function fmtDurShort(h) {
     const total = Math.round(h * 60);
     const hh = Math.floor(total / 60), mm = total % 60;
+    if (total === 0) return '0';
     if (hh === 0) return mm + 'm';
     if (mm === 0) return hh + 'h';
     return hh + 'h ' + mm + 'm';
@@ -1678,9 +1679,9 @@ function renderSummary() {
             const open = expandedPeople.has(row.person);
             html += `<tr class="sum-row ${open ? 'open' : ''}" data-idx="${idx}">
                 <td class="person-name" style="color:${color};"><i class="fas fa-chevron-right sum-arrow"></i>${escapeHtml(row.person)}</td>
-                <td>${fmtDur(row.total)}</td>
-                <td><span class="badge badge-done">${fmtDur(row.done)}</span></td>
-                <td><span class="badge badge-pending">${fmtDur(row.total - row.done)}</span></td>
+                <td>${fmtDurShort(row.total)}</td>
+                <td><span class="badge badge-done">${fmtDurShort(row.done)}</span></td>
+                <td><span class="badge badge-pending">${fmtDurShort(row.total - row.done)}</span></td>
             </tr>`;
             const items = row.items.filter(e => !(hideDone && e.done)).sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start));
             html += `<tr class="sum-detail ${open ? 'open' : ''}" data-idx="${idx}"><td colspan="4"><div class="sum-detail-list">`;
@@ -1700,9 +1701,9 @@ function renderSummary() {
         }
         html += `<tr style="font-weight:700;">
                 <td>${filterOn ? 'Total (filtrado)' : 'Total'}</td>
-                <td>${fmtDur(sumTotal)}</td>
-                <td>${fmtDur(sumDone)}</td>
-                <td>${fmtDur(sumTotal - sumDone)}</td>
+                <td>${fmtDurShort(sumTotal)}</td>
+                <td>${fmtDurShort(sumDone)}</td>
+                <td>${fmtDurShort(sumTotal - sumDone)}</td>
             </tr>`;
         html += `</tbody></table></div>`;
         }
