@@ -1539,6 +1539,22 @@ function entryHours(e) {
     return Math.max(0, ((eh * 60 + em) - (sh * 60 + sm)) / 60);
 }
 function fmtHours(h) { return String(Math.round(h * 100) / 100).replace('.', ','); }
+// Versión compacta para el globito: 42m, 1h, 1h 20m
+function fmtDurShort(h) {
+    const total = Math.round(h * 60);
+    const hh = Math.floor(total / 60), mm = total % 60;
+    if (hh === 0) return mm + 'm';
+    if (mm === 0) return hh + 'h';
+    return hh + 'h ' + mm + 'm';
+}
+// Duración legible: 40 min, 1 h, 1 h 20 min
+function fmtDur(h) {
+    const total = Math.round(h * 60);
+    const hh = Math.floor(total / 60), mm = total % 60;
+    if (hh === 0) return mm + ' min';
+    if (mm === 0) return hh + ' h';
+    return hh + ' h ' + mm + ' min';
+}
 function shiftSummary(delta) {
     summaryMonth += delta;
     if (summaryMonth < 0) { summaryMonth = 11; summaryYear--; }
@@ -1662,9 +1678,9 @@ function renderSummary() {
             const open = expandedPeople.has(row.person);
             html += `<tr class="sum-row ${open ? 'open' : ''}" data-idx="${idx}">
                 <td class="person-name" style="color:${color};"><i class="fas fa-chevron-right sum-arrow"></i>${escapeHtml(row.person)}</td>
-                <td>${fmtHours(row.total)}</td>
-                <td><span class="badge badge-done">${fmtHours(row.done)}</span></td>
-                <td><span class="badge badge-pending">${fmtHours(row.total - row.done)}</span></td>
+                <td>${fmtDur(row.total)}</td>
+                <td><span class="badge badge-done">${fmtDur(row.done)}</span></td>
+                <td><span class="badge badge-pending">${fmtDur(row.total - row.done)}</span></td>
             </tr>`;
             const items = row.items.filter(e => !(hideDone && e.done)).sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start));
             html += `<tr class="sum-detail ${open ? 'open' : ''}" data-idx="${idx}"><td colspan="4"><div class="sum-detail-list">`;
@@ -1675,7 +1691,7 @@ function renderSummary() {
                 html += `<div class="sum-detail-item ${e.done ? 'done' : ''}">
                     <span class="sd-date"><b>${day}</b> ${wd} · ${mon}</span>
                     <span class="sd-time">${e.start} – ${e.end}</span>
-                    <span class="sd-h">${fmtHours(entryHours(e))} h</span>
+                    <span class="sd-h">${fmtDur(entryHours(e))}</span>
                     <button class="sd-btn sd-check ${e.done ? 'checked' : ''}" data-id="${e.id}" title="${e.done ? 'Hecha' : 'Marcar como hecha'}">${e.done ? '<i class="fas fa-check"></i>' : ''}</button>
                     <button class="sd-btn sd-edit" data-id="${e.id}" title="Editar"><i class="fas fa-pen"></i></button>
                 </div>`;
@@ -1684,9 +1700,9 @@ function renderSummary() {
         }
         html += `<tr style="font-weight:700;">
                 <td>${filterOn ? 'Total (filtrado)' : 'Total'}</td>
-                <td>${fmtHours(sumTotal)}</td>
-                <td>${fmtHours(sumDone)}</td>
-                <td>${fmtHours(sumTotal - sumDone)}</td>
+                <td>${fmtDur(sumTotal)}</td>
+                <td>${fmtDur(sumDone)}</td>
+                <td>${fmtDur(sumTotal - sumDone)}</td>
             </tr>`;
         html += `</tbody></table></div>`;
         }
@@ -1781,7 +1797,7 @@ function updateBadges() {
         .reduce((sum, e) => sum + entryHours(e), 0);
     const badge = document.getElementById('summaryBadge');
     if (!badge) return;
-    if (pendingHours > 0) { badge.textContent = fmtHours(pendingHours); badge.style.display = 'flex'; }
+    if (pendingHours > 0) { badge.textContent = fmtDurShort(pendingHours); badge.style.display = 'flex'; }
     else badge.style.display = 'none';
 }
 
@@ -1814,14 +1830,14 @@ function buildSummaryCsv() {
             getDayName(e.date),
             e.start,
             e.end,
-            fmtHours(entryHours(e)),   // ya devuelve con coma decimal
+            fmtDur(entryHours(e)),
             e.done ? 'Hecha' : 'Pendiente',
             e.comment || ''
         ]);
     }
     const totalHours = entries.reduce((s, e) => s + entryHours(e), 0);
     rows.push([]);
-    rows.push(['TOTAL', '', '', '', '', fmtHours(totalHours), '', '']);
+    rows.push(['TOTAL', '', '', '', '', fmtDur(totalHours), '', '']);
 
     const csv = rows.map(r => r.map(csvCell).join(';')).join('\r\n');
 
@@ -1929,9 +1945,9 @@ async function exportSummaryPdf() {
         summaryRows += `
             <tr>
                 <td style="width:34%;"><span class="hx-dot" style="background:${color};"></span>${escapeHtml(p.person)}</td>
-                <td class="hx-num">${fmtHours(p.total)} h</td>
-                <td class="hx-num hx-ok">${fmtHours(p.done)} h</td>
-                <td class="hx-num hx-warn">${fmtHours(p.total - p.done)} h</td>
+                <td class="hx-num">${fmtDur(p.total)}</td>
+                <td class="hx-num hx-ok">${fmtDur(p.done)}</td>
+                <td class="hx-num hx-warn">${fmtDur(p.total - p.done)}</td>
                 <td style="width:22%;">
                     <div class="hx-track"><div class="hx-fill" style="width:${pct}%;background:${color};"></div></div>
                 </td>
@@ -1953,7 +1969,7 @@ async function exportSummaryPdf() {
                     <td style="width:16%;">${fmtShort(e.date)}</td>
                     <td style="width:20%;">${escapeHtml(cap(getDayName(e.date)))}</td>
                     <td style="width:22%;">${e.start} – ${e.end}</td>
-                    <td class="hx-num" style="width:12%;">${fmtHours(entryHours(e))} h</td>
+                    <td class="hx-num" style="width:12%;">${fmtDur(entryHours(e))}</td>
                     <td style="width:16%;">${st}</td>
                     <td class="hx-com">${escapeHtml(e.comment || '')}</td>
                 </tr>`;
@@ -1963,7 +1979,7 @@ async function exportSummaryPdf() {
                 <div class="hx-phead" style="border-left:5px solid ${color};">
                     <div class="hx-avatar" style="background:${color};">${initial}</div>
                     <div class="hx-pname">${escapeHtml(p.person)}</div>
-                    <div class="hx-ptotal">${fmtHours(p.total)} h</div>
+                    <div class="hx-ptotal">${fmtDur(p.total)}</div>
                 </div>
                 <table class="hx-detail">${rows}</table>
             </div>`;
@@ -2019,9 +2035,9 @@ async function exportSummaryPdf() {
             </div>
 
             <div class="hx-kpis">
-                <div class="hx-kpi"><div class="hx-kpi-n" style="color:#6C63FF;">${fmtHours(totalAll)} h</div><div class="hx-kpi-l">Total</div></div>
-                <div class="hx-kpi"><div class="hx-kpi-n" style="color:#059669;">${fmtHours(doneAll)} h</div><div class="hx-kpi-l">Hechas (${pctAll}%)</div></div>
-                <div class="hx-kpi"><div class="hx-kpi-n" style="color:#D97706;">${fmtHours(pendAll)} h</div><div class="hx-kpi-l">Pendientes</div></div>
+                <div class="hx-kpi"><div class="hx-kpi-n" style="color:#6C63FF;">${fmtDur(totalAll)}</div><div class="hx-kpi-l">Total</div></div>
+                <div class="hx-kpi"><div class="hx-kpi-n" style="color:#059669;">${fmtDur(doneAll)}</div><div class="hx-kpi-l">Hechas (${pctAll}%)</div></div>
+                <div class="hx-kpi"><div class="hx-kpi-n" style="color:#D97706;">${fmtDur(pendAll)}</div><div class="hx-kpi-l">Pendientes</div></div>
                 <div class="hx-kpi"><div class="hx-kpi-n">${people.length}</div><div class="hx-kpi-l">Personas</div></div>
             </div>
 
@@ -2034,9 +2050,9 @@ async function exportSummaryPdf() {
                     ${summaryRows}
                     <tr class="hx-tot">
                         <td>TOTAL</td>
-                        <td class="hx-num">${fmtHours(totalAll)} h</td>
-                        <td class="hx-num">${fmtHours(doneAll)} h</td>
-                        <td class="hx-num">${fmtHours(pendAll)} h</td>
+                        <td class="hx-num">${fmtDur(totalAll)}</td>
+                        <td class="hx-num">${fmtDur(doneAll)}</td>
+                        <td class="hx-num">${fmtDur(pendAll)}</td>
                         <td></td>
                     </tr>
                 </tbody>
