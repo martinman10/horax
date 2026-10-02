@@ -233,40 +233,73 @@
     <div id="appLoading" class="app-loading"><i class="fas fa-circle-notch fa-spin"></i></div>
 
     <div id="profileModal" class="modal-overlay" style="display:none;">
-        <div class="modal-card">
-            <h2 id="profileModalTitle"><i class="fas fa-id-badge" style="color:var(--primary-ink);margin-right:8px;"></i>¿Cómo te llamás?</h2>
-            <p class="modal-hint">Tu nombre aparece arriba en la app, así sabés siempre en qué perfil estás cargando las extras. También podés elegir el color de la app.</p>
-            <div class="form-group">
-                <label>Nombre</label>
-                <input type="text" id="profileFirstName" placeholder="Ej: Karla" autocomplete="given-name" />
-            </div>
-            <div class="form-group">
-                <label>Apellido <span class="label-opt">(opcional)</span></label>
-                <input type="text" id="profileLastName" placeholder="Ej: Pérez" autocomplete="family-name" />
-            </div>
-            <div class="form-group">
-                <label>Color de la app</label>
-                <div class="theme-swatches" id="themeSwatches"></div>
-            </div>
-            <div class="form-group" id="pushGroup">
-                <label>Avisos de extras</label>
-                <button type="button" class="btn-secondary" id="pushToggleBtn" style="width:100%;"></button>
-                <p class="modal-hint" id="pushHint" style="margin:6px 0 0;"></p>
-            </div>
-            <div class="form-group">
-                <label>Apariencia</label>
-                <div class="mode-seg" id="modeSeg">
-                    <button type="button" data-mode="auto"><i class="fas fa-circle-half-stroke"></i> Auto</button>
-                    <button type="button" data-mode="light"><i class="fas fa-sun"></i> Claro</button>
-                    <button type="button" data-mode="dark"><i class="fas fa-moon"></i> Oscuro</button>
+        <div class="modal-card profile-card" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle">
+            <div class="pf-head">
+                <div class="pf-avatar" id="profileAvatar" aria-hidden="true">?</div>
+                <div class="pf-head-text">
+                    <h2 id="profileModalTitle">Mi perfil</h2>
+                    <p class="pf-sub" id="profileModalHint">Tu nombre se ve arriba en la app.</p>
                 </div>
             </div>
-            <p id="profileError" class="login-error" style="display:none;"></p>
-            <div class="modal-actions">
-                <button class="btn-secondary" id="profileCancelBtn" style="display:none;">Cancelar</button>
-                <button class="btn-submit" id="profileSaveBtn"><i class="fas fa-check"></i> Guardar</button>
+
+            <div class="pf-body" id="profileBody">
+                <div class="pf-names">
+                    <div class="form-group">
+                        <label for="profileFirstName">Nombre</label>
+                        <input type="text" id="profileFirstName" placeholder="Ej: Karla" autocomplete="given-name" />
+                    </div>
+                    <div class="form-group">
+                        <label for="profileLastName">Apellido <span class="label-opt">(opcional)</span></label>
+                        <input type="text" id="profileLastName" placeholder="Ej: Pérez" autocomplete="family-name" />
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Color de la app</label>
+                    <div class="theme-swatches" id="themeSwatches"></div>
+                </div>
+
+                <div class="form-group">
+                    <label>Apariencia</label>
+                    <div class="mode-seg" id="modeSeg">
+                        <button type="button" data-mode="auto"><i class="fas fa-circle-half-stroke"></i> Auto</button>
+                        <button type="button" data-mode="light"><i class="fas fa-sun"></i> Claro</button>
+                        <button type="button" data-mode="dark"><i class="fas fa-moon"></i> Oscuro</button>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Este dispositivo</label>
+                    <div class="pf-list">
+                        <button type="button" class="pf-row" id="openInstallHelpBtn">
+                            <span class="pf-row-ic"><i class="fas fa-mobile-screen-button"></i></span>
+                            <span class="pf-row-text">
+                                <span class="pf-row-title">¿Cómo instalar HORAX?</span>
+                                <small class="pf-row-sub">Tenela en la pantalla de inicio.</small>
+                            </span>
+                            <i class="fas fa-chevron-right pf-row-end" aria-hidden="true"></i>
+                        </button>
+                        <button type="button" class="pf-row" id="pushToggleBtn" role="switch" aria-checked="false">
+                            <span class="pf-row-ic"><i class="fas fa-bell"></i></span>
+                            <span class="pf-row-text">
+                                <span class="pf-row-title">Avisos de extras</span>
+                                <small class="pf-row-sub" id="pushHint"></small>
+                            </span>
+                            <span class="pf-switch" aria-hidden="true"></span>
+                        </button>
+                    </div>
+                </div>
+
+                <button type="button" class="pf-logout" id="logoutBtn" style="display:none;"><i class="fas fa-sign-out-alt"></i> Cerrar sesión</button>
             </div>
-            <button type="button" class="btn-danger-soft" id="logoutBtn" style="display:none;margin:14px 0 0;"><i class="fas fa-sign-out-alt"></i> Cerrar sesión</button>
+
+            <div class="pf-foot">
+                <p id="profileError" class="login-error" style="display:none;"></p>
+                <div class="modal-actions">
+                    <button class="btn-secondary" id="profileCancelBtn" style="display:none;">Cancelar</button>
+                    <button class="btn-submit" id="profileSaveBtn"><i class="fas fa-check"></i> Guardar</button>
+                </div>
+            </div>
         </div>
     </div>
 
