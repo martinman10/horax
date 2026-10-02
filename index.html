@@ -4,6 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#6C63FF" />
+    <meta name="color-scheme" content="light dark" />
+    <script>try{var m=localStorage.getItem('horax_mode')||'auto';if(m==='dark'||(m==='auto'&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.setAttribute('data-theme','dark');}catch(e){}</script>
     <meta name="description" content="HORAX · Gestión de horas extras - App para organizar y visualizar horas extras de forma simple" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -64,7 +66,6 @@
                 </span>
             </div>
             <div class="header-actions">
-                <button id="logoutBtn" title="Cerrar sesión" style="display:none;"><i class="fas fa-sign-out-alt"></i></button>
                 <button id="clearBtn" title="Vaciar el mes"><i class="fas fa-trash-alt"></i></button>
             </div>
         </header>
@@ -252,11 +253,20 @@
                 <button type="button" class="btn-secondary" id="pushToggleBtn" style="width:100%;"></button>
                 <p class="modal-hint" id="pushHint" style="margin:6px 0 0;"></p>
             </div>
+            <div class="form-group">
+                <label>Apariencia</label>
+                <div class="mode-seg" id="modeSeg">
+                    <button type="button" data-mode="auto"><i class="fas fa-circle-half-stroke"></i> Auto</button>
+                    <button type="button" data-mode="light"><i class="fas fa-sun"></i> Claro</button>
+                    <button type="button" data-mode="dark"><i class="fas fa-moon"></i> Oscuro</button>
+                </div>
+            </div>
             <p id="profileError" class="login-error" style="display:none;"></p>
             <div class="modal-actions">
                 <button class="btn-secondary" id="profileCancelBtn" style="display:none;">Cancelar</button>
                 <button class="btn-submit" id="profileSaveBtn"><i class="fas fa-check"></i> Guardar</button>
             </div>
+            <button type="button" class="btn-danger-soft" id="logoutBtn" style="display:none;margin:14px 0 0;"><i class="fas fa-sign-out-alt"></i> Cerrar sesión</button>
         </div>
     </div>
 
