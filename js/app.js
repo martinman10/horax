@@ -1014,15 +1014,26 @@ function openProfileModal(firstTime) {
     renderThemeSwatches();
     renderModeSeg();
 
-    document.getElementById('profileModalTitle').innerHTML =
-        `<i class="fas fa-id-badge" style="color:var(--primary-ink);margin-right:8px;"></i>` +
-        (firstTime ? '¿Cómo te llamás?' : 'Mi perfil');
+    document.getElementById('profileModalTitle').textContent = firstTime ? '¿Cómo te llamás?' : 'Mi perfil';
+    document.getElementById('profileModalHint').textContent = firstTime
+        ? 'Así vas a ver tu perfil arriba en la app.'
+        : 'Tu nombre se ve arriba en la app.';
+    updateProfileAvatar();
+    const pfBody = document.getElementById('profileBody'); if (pfBody) pfBody.scrollTop = 0;
     document.getElementById('profileCancelBtn').style.display = firstTime ? 'none' : 'block';
     document.getElementById('profileError').style.display = 'none';
     modal.dataset.firstTime = firstTime ? '1' : '';
     modal.style.display = 'flex';
     refreshPushUi();
     setTimeout(() => firstInput.focus(), 120);
+}
+
+function updateProfileAvatar() {
+    const av = document.getElementById('profileAvatar');
+    if (!av) return;
+    const f = document.getElementById('profileFirstName').value.trim();
+    const l = document.getElementById('profileLastName').value.trim();
+    av.textContent = ((f[0] || '') + (l[0] || '')).toUpperCase() || '?';
 }
 
 function closeProfileModal(force) {
@@ -3781,18 +3792,17 @@ function refreshPushUi() {
     const hint = document.getElementById('pushHint');
     if (!btn || !hint) return;
     const on = pushSupported() && pushConfigured() && Notification.permission === 'granted' && !!getSavedPushToken();
-    btn.innerHTML = on
-        ? '<i class="fas fa-bell-slash"></i> Desactivar avisos en este dispositivo'
-        : '<i class="fas fa-bell"></i> Activar avisos de extras';
+    const unavailable = !pushSupported() || Notification.permission === 'denied';
     btn.dataset.on = on ? '1' : '';
+    btn.classList.toggle('on', on);
+    btn.classList.toggle('is-unavailable', unavailable);
+    btn.setAttribute('aria-checked', on ? 'true' : 'false');
     if (!pushSupported()) {
-        hint.textContent = 'Este navegador no permite avisos. En iPhone tenés que agregar la app a la pantalla de inicio primero.';
+        hint.textContent = 'Este navegador no permite avisos. En iPhone, primero agregá la app a la pantalla de inicio.';
     } else if (Notification.permission === 'denied') {
-        hint.textContent = 'Bloqueaste los avisos para este sitio. Activalos desde los ajustes del navegador.';
+        hint.textContent = 'Están bloqueados. Activalos desde los ajustes del navegador.';
     } else {
-        hint.textContent = on
-            ? 'Este dispositivo recibe un aviso la mañana de cada día que haya extras pendientes.'
-            : 'Te avisamos la mañana de cada día que haya extras pendientes, para que entres a marcarlas.';
+        hint.textContent = 'Un aviso a la mañana de cada día con extras pendientes.';
     }
 }
 
@@ -3887,6 +3897,7 @@ function init() {
         if (document.getElementById('pushToggleBtn').dataset.on === '1') disablePush(); else enablePush();
     });
     document.getElementById('profileCancelBtn').addEventListener('click', () => closeProfileModal(true));
+    ['profileFirstName', 'profileLastName'].forEach(id => document.getElementById(id).addEventListener('input', updateProfileAvatar));
     document.getElementById('profileModal').addEventListener('click', ev => {
         if (ev.target.id === 'profileModal') closeProfileModal(false);
     });
@@ -4210,7 +4221,13 @@ function refreshInstallUI() {
     const b = document.getElementById('installBannerBtn');
     if (b) b.textContent = deferredInstallPrompt ? 'Instalar' : 'Ver cómo';
     const hb = document.getElementById('openInstallHelpBtn');
-    if (hb) hb.innerHTML = deferredInstallPrompt ? '<i class="fas fa-download"></i> Instalar HORAX ahora' : '<i class="fas fa-mobile-screen-button"></i> ¿Cómo instalar HORAX?';
+    if (hb) {
+        const t = hb.querySelector('.pf-row-title'), sub = hb.querySelector('.pf-row-sub'), ic = hb.querySelector('.pf-row-ic i');
+        const can = !!deferredInstallPrompt;
+        if (t) t.textContent = can ? 'Instalar HORAX ahora' : (isStandalone() ? 'Instalar en otro celu' : '¿Cómo instalar HORAX?');
+        if (sub) sub.textContent = isStandalone() ? 'Ya la usás como app en este dispositivo.' : 'Tenela en la pantalla de inicio.';
+        if (ic) ic.className = can ? 'fas fa-download' : 'fas fa-mobile-screen-button';
+    }
 }
 async function triggerNativeInstall() {
     const ev = deferredInstallPrompt; if (!ev) return;
@@ -4269,18 +4286,11 @@ function initInstallPrompt() {
         if (e.key === 'ArrowRight') installGo(1); else if (e.key === 'ArrowLeft') installGo(-1); else if (e.key === 'Escape') closeInstallModal();
     });
 
-    const profileModal = $('profileModal');
-    if (profileModal && !$('openInstallHelpBtn')) {
-        const pushGroup = $('pushGroup');
-        if (pushGroup && pushGroup.parentNode) {
-            const g = document.createElement('div');
-            g.className = 'form-group';
-            g.innerHTML = `<label>Instalar en el celu</label>
-                <button type="button" class="btn-secondary" id="openInstallHelpBtn" style="width:100%;"><i class="fas fa-mobile-screen-button"></i> ¿Cómo instalar HORAX?</button>`;
-            pushGroup.parentNode.insertBefore(g, pushGroup);
-            $('openInstallHelpBtn').addEventListener('click', () => { if (deferredInstallPrompt) triggerNativeInstall(); else openInstallModal(); });
-            refreshInstallUI();
-        }
+    // El botón "¿Cómo instalar HORAX?" ahora está en el HTML del modal de perfil
+    const installHelpBtn = $('openInstallHelpBtn');
+    if (installHelpBtn) {
+        installHelpBtn.addEventListener('click', () => { if (deferredInstallPrompt) triggerNativeInstall(); else openInstallModal(); });
+        refreshInstallUI();
     }
 }
 
