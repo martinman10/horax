@@ -4365,10 +4365,25 @@ function refreshInstallUI() {
     const hb = document.getElementById('openInstallHelpBtn');
     if (hb) {
         const t = hb.querySelector('.pf-row-title'), sub = hb.querySelector('.pf-row-sub'), ic = hb.querySelector('.pf-row-ic i');
-        const can = !!deferredInstallPrompt;
-        if (t) t.textContent = can ? 'Instalar HORAX ahora' : (isStandalone() ? 'Instalar en otro celu' : '¿Cómo instalar HORAX?');
-        if (sub) sub.textContent = isStandalone() ? 'Acá ya está instalada. Mirá los pasos para otro celu.' : 'Tenela en la pantalla de inicio.';
-        if (ic) ic.className = can ? 'fas fa-download' : 'fas fa-mobile-screen-button';
+        const can = !!deferredInstallPrompt, inApp = isStandalone();
+        if (t) t.textContent = inApp ? 'Compartir a otro celu' : (can ? 'Instalar HORAX ahora' : '¿Cómo instalar HORAX?');
+        if (sub) sub.textContent = inApp ? 'Mandá el link para instalarla por WhatsApp o donde quieras.' : 'Tenela en la pantalla de inicio.';
+        if (ic) ic.className = inApp ? 'fas fa-share-nodes' : (can ? 'fas fa-download' : 'fas fa-mobile-screen-button');
+    }
+}
+// Comparte el link de la app (WhatsApp, mensajes, mail, etc.) para instalarla en otro celu
+async function shareAppLink() {
+    const url = new URL('./', location.href).href; // link limpio a la app, sin # ni ?
+    const data = { title: 'HORAX', text: 'Instalá HORAX en tu celu desde este link:', url };
+    if (navigator.share) {
+        try { await navigator.share(data); return; }
+        catch (err) { if (err && err.name === 'AbortError') return; /* si falla por otra cosa, cae al copiado */ }
+    }
+    try {
+        await navigator.clipboard.writeText(url);
+        if (typeof showToast === 'function') showToast('Link copiado. Pegalo en WhatsApp 📋', 3500);
+    } catch (_) {
+        window.prompt('Copiá este link y mandalo:', url);
     }
 }
 async function triggerNativeInstall() {
@@ -4431,7 +4446,7 @@ function initInstallPrompt() {
     // El botón "¿Cómo instalar HORAX?" ahora está en el HTML del modal de perfil
     const installHelpBtn = $('openInstallHelpBtn');
     if (installHelpBtn) {
-        installHelpBtn.addEventListener('click', () => { if (deferredInstallPrompt) triggerNativeInstall(); else openInstallModal(); });
+        installHelpBtn.addEventListener('click', () => { if (isStandalone()) shareAppLink(); else if (deferredInstallPrompt) triggerNativeInstall(); else openInstallModal(); });
         refreshInstallUI();
     }
 }
