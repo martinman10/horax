@@ -714,7 +714,7 @@
 .mode-seg { display: flex; gap: 6px; background: var(--bg); border: 1.5px solid var(--border); border-radius: var(--radius-sm); padding: 4px; }
 .mode-seg button {
     flex: 1; border: none; background: transparent; color: var(--text-secondary);
-    font-family: inherit; font-size: 13px; font-weight: 600; padding: 9px 4px;
+    font-family: inherit; font-size: 14px; font-weight: 600; padding: 11px 4px;
     border-radius: 9px; cursor: pointer; transition: 0.2s;
     display: flex; align-items: center; justify-content: center; gap: 6px;
 }
@@ -755,3 +755,67 @@
 [data-theme="dark"] .badge-encargada { background: rgba(59, 130, 246, 0.22); color: #93C5FD; }
 [data-theme="dark"] .install-status { background: rgba(16, 185, 129, 0.15); color: #6EE7B7; }
 [data-theme="dark"] .install-warn { background: rgba(249, 115, 22, 0.15); color: #FDBA74; }
+
+
+/* ================= MODAL DE PERFIL ================= */
+.profile-card { display: flex; flex-direction: column; padding: 0; max-height: calc(100dvh - 40px); overflow: hidden; }
+.pf-head { flex: none; display: flex; align-items: center; gap: 14px; padding: 20px 20px 14px; }
+.pf-avatar {
+    width: 48px; height: 48px; flex: none; border-radius: 50%;
+    background: var(--primary); color: var(--on-primary);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; font-weight: 700; transition: background .2s, color .2s;
+}
+.pf-head-text { min-width: 0; }
+.profile-card .pf-head h2 { margin: 0; font-size: 18px; line-height: 1.2; }
+.pf-sub { margin: 3px 0 0; font-size: 13px; line-height: 1.35; color: var(--text-secondary); }
+.pf-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; padding: 6px 20px 12px; }
+.pf-names { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.pf-names .form-group { min-width: 0; }
+.profile-card .pf-body .form-group { margin-bottom: 20px; }
+.profile-card .form-group input { font-size: 16px; }
+.profile-card .theme-swatches { flex-wrap: nowrap; justify-content: space-between; gap: 8px; }
+.profile-card .theme-swatch { width: 40px; height: 40px; flex: none; }
+
+/* Filas de ajustes del dispositivo */
+.pf-list { background: var(--bg); border: 1.5px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+.pf-row {
+    width: 100%; display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+    background: transparent; border: none; text-align: left; color: var(--text);
+    font-family: inherit; cursor: pointer; transition: background .15s;
+}
+.pf-row + .pf-row { border-top: 1.5px solid var(--border); }
+.pf-row:active { background: var(--border); }
+.pf-row-ic {
+    width: 36px; height: 36px; flex: none; border-radius: 10px;
+    background: var(--primary-bg); color: var(--primary-ink);
+    display: flex; align-items: center; justify-content: center; font-size: 16px;
+}
+.pf-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pf-row-title { font-size: 15px; font-weight: 600; }
+.pf-row-sub { font-size: 12.5px; line-height: 1.35; font-weight: 400; color: var(--text-secondary); }
+.pf-row-end { flex: none; font-size: 13px; color: var(--text-light); }
+.pf-switch { position: relative; flex: none; width: 46px; height: 28px; border-radius: 14px; background: var(--text-light); transition: background .2s; }
+.pf-switch::after {
+    content: ''; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%;
+    background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .3); transition: transform .2s, background .2s;
+}
+.pf-row.on .pf-switch { background: var(--primary); }
+.pf-row.on .pf-switch::after { transform: translateX(18px); background: var(--on-primary); }
+.pf-row.is-unavailable .pf-switch { opacity: .45; }
+
+/* Cerrar sesión: discreto, sin competir con Guardar */
+.pf-logout {
+    width: 100%; margin-top: 2px; padding: 12px; border: none; background: transparent;
+    color: #B91C1C; font-family: inherit; font-size: 14px; font-weight: 600;
+    border-radius: var(--radius-sm); cursor: pointer; align-items: center; justify-content: center; gap: 8px;
+}
+.pf-logout:active { background: #FEF2F2; }
+
+/* Pie fijo: Guardar/Cancelar siempre a la vista aunque el cuerpo scrollee */
+.pf-foot { flex: none; padding: 12px 20px 16px; border-top: 1px solid var(--border); background: var(--card); }
+.pf-foot .login-error { margin: 0 0 10px; }
+
+[data-theme="dark"] .pf-logout { color: #FCA5A5; }
+[data-theme="dark"] .pf-logout:active { background: rgba(239, 68, 68, 0.12); }
+@media (prefers-reduced-motion: reduce) { .pf-switch, .pf-switch::after, .pf-avatar { transition: none; } }
