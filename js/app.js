@@ -98,6 +98,7 @@ function localsCollectionRef() { return db.collection('locals'); }
 // currentRole: 'admin' (ve todos los locales) | 'encargada' (ve solo el suyo)
 let currentRole = null;
 let currentLocalId = null;      // local que se está mostrando ahora
+let currentLocalDocName = null; // nombre del local, leído de su documento (sirve también para las encargadas)
 let availableLocals = [];       // [{id, name}] — solo se llena para admin
 let localDocUnsubscribe = null;
 function lastLocalKey(uid) { return 'horax_last_local_' + uid; }
@@ -336,10 +337,12 @@ async function showOnboardingScreen(user) {
 function subscribeToLocal(localId) {
     if (localDocUnsubscribe) { localDocUnsubscribe(); localDocUnsubscribe = null; }
     currentLocalId = localId;
+    currentLocalDocName = null;
     if (currentUser) {
         try { localStorage.setItem(lastLocalKey(currentUser.uid), localId); } catch (_) {}
     }
     localDocUnsubscribe = localDocRef(localId).onSnapshot(doc => {
+        currentLocalDocName = (doc.exists && doc.data() && doc.data().name) || null;
         if (suppressNextSnapshot) { suppressNextSnapshot = false; return; }
         const remote = (doc.exists && doc.data().entries) || [];
         overtimeData = remote;
@@ -1095,6 +1098,62 @@ function getEmployeeColor(person) {
     return color;
 }
 
+// ---- Color del NOMBRE de cada persona ----
+// La paleta es pastel (lindo para puntos, bordes y fichas), pero un pastel sobre blanco no se lee como texto.
+// Para el texto usamos el MISMO tono, más oscuro en modo claro (o más claro en modo oscuro), hasta que se lea bien.
+function rgbToHsl(c) {
+    const r = c[0] / 255, g = c[1] / 255, b = c[2] / 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    let h = 0, s = 0;
+    const l = (max + min) / 2;
+    if (max !== min) {
+        const d = max - min;
+        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+        if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+        else if (max === g) h = (b - r) / d + 2;
+        else h = (r - g) / d + 4;
+        h /= 6;
+    }
+    return [h, s, l];
+}
+function hslToRgb(h, s, l) {
+    if (s === 0) { const v = l * 255; return [v, v, v]; }
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    const f = t => {
+        if (t < 0) t += 1;
+        if (t > 1) t -= 1;
+        if (t < 1 / 6) return p + (q - p) * 6 * t;
+        if (t < 1 / 2) return q;
+        if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+        return p;
+    };
+    return [f(h + 1 / 3) * 255, f(h) * 255, f(h - 1 / 3) * 255];
+}
+const personTextCache = new Map();
+function personTextColor(hex, dark) {
+    if (dark === undefined) dark = isDarkNow();
+    const key = hex + (dark ? '|d' : '|l');
+    if (personTextCache.has(key)) return personTextCache.get(key);
+    const bgLum = relLum(dark ? DARK_CARD : [255, 255, 255]);
+    const hsl = rgbToHsl(hexToRgb(hex));
+    let l = hsl[2];
+    let rgb = hslToRgb(hsl[0], hsl[1], l);
+    let guard = 0;
+    while (contrastRatio(relLum(rgb), bgLum) < 5 && guard++ < 60) {
+        l += dark ? 0.015 : -0.015;
+        l = Math.max(0.05, Math.min(0.95, l));
+        rgb = hslToRgb(hsl[0], hsl[1], l);
+    }
+    const out = rgbToHex(rgb);
+    personTextCache.set(key, out);
+    return out;
+}
+// Puntito de color de la persona: pastel por dentro, con un aro del mismo tono más fuerte (así se ve aunque el pastel sea muy claro)
+function personDotHtml(color) {
+    return `<span class="p-dot" style="background:${color};box-shadow:inset 0 0 0 1.5px ${personTextColor(color)};"></span>`;
+}
+
 const NAME_STOPWORDS = new Set([
     'LIBRE','LIBRA','LIC','VERANO','CAP','COL','INT','PC','COSTA','MAT','AROCENA',
     'LUIS','KARLA','NUEVO','CENTRO','HORARIO','VAC','OFI','DES','DESC','DESCANSO',
@@ -1237,7 +1296,11 @@ function buildEditSummary(before, after) {
 
 function currentLocalName() {
     const found = availableLocals.find(l => l.id === currentLocalId);
-    return found ? found.name : (currentLocalId || 'este local');
+    if (found) return found.name;
+    if (currentLocalDocName) return currentLocalDocName;
+    // Último recurso: "colonia-shopping" -> "Colonia Shopping"
+    if (currentLocalId) return currentLocalId.split(/[-_]+/).filter(Boolean).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    return 'este local';
 }
 // Borra las extras de lo que se está viendo:
 //  - En el Calendario: el mes calendario (1 al último día).
@@ -1504,7 +1567,7 @@ function renderDayDetail(dateStr) {
                     ${e.done ? '<i class="fas fa-check"></i>' : ''}
                 </div>
                 <div class="ot-info">
-                    <div class="ot-person"><span class="p-dot" style="background:${color};"></span>${escapeHtml(e.person)}</div>
+                    <div class="ot-person" style="color:${personTextColor(color)};">${personDotHtml(color)}${escapeHtml(e.person)}</div>
                     <div class="ot-time">${e.start} - ${e.end}</div>
                     ${e.comment ? `<div class="ot-comment"><i class="fas fa-comment-dots"></i> ${escapeHtml(e.comment)}</div>` : ''}
                 </div>
@@ -1731,7 +1794,7 @@ function renderSummary() {
             const idx = summary.indexOf(row);
             const open = expandedPeople.has(row.person);
             html += `<tr class="sum-row ${open ? 'open' : ''}" data-idx="${idx}">
-                <td class="person-name"><i class="fas fa-chevron-right sum-arrow"></i><span class="p-dot" style="background:${color};"></span>${escapeHtml(row.person)}</td>
+                <td class="person-name" style="color:${personTextColor(color)};"><i class="fas fa-chevron-right sum-arrow"></i>${personDotHtml(color)}${escapeHtml(row.person)}</td>
                 <td>${fmtDurShort(row.total)}</td>
                 <td><span class="badge badge-done">${fmtDurShort(row.done)}</span></td>
                 <td><span class="badge badge-pending">${fmtDurShort(row.total - row.done)}</span></td>
@@ -1989,21 +2052,21 @@ async function exportSummaryPdf() {
     const pendAll = totalAll - doneAll;
     const pctAll = totalAll > 0 ? Math.round((doneAll / totalAll) * 100) : 0;
 
-    const palette = ['#6C63FF', '#10B981', '#F59E0B', '#EF4444', '#3B82F6', '#EC4899', '#14B8A6', '#8B5CF6'];
 
     // Tabla resumen (página 1)
     let summaryRows = '';
     people.forEach((p, i) => {
         const pct = p.total > 0 ? Math.round((p.done / p.total) * 100) : 0;
-        const color = palette[i % palette.length];
+        const color = getEmployeeColor(p.person);
+        const shade = personTextColor(color, false);
         summaryRows += `
             <tr>
-                <td style="width:34%;"><span class="hx-dot" style="background:${color};"></span>${escapeHtml(p.person)}</td>
+                <td style="width:34%;color:${shade};"><span class="hx-dot" style="background:${color};border-color:${shade};"></span>${escapeHtml(p.person)}</td>
                 <td class="hx-num">${fmtDur(p.total)}</td>
                 <td class="hx-num hx-ok">${fmtDur(p.done)}</td>
                 <td class="hx-num hx-warn">${fmtDur(p.total - p.done)}</td>
                 <td style="width:22%;">
-                    <div class="hx-track"><div class="hx-fill" style="width:${pct}%;background:${color};"></div></div>
+                    <div class="hx-track"><div class="hx-fill" style="width:${pct}%;background:${color};border:1px solid ${shade};"></div></div>
                 </td>
             </tr>`;
     });
@@ -2011,7 +2074,8 @@ async function exportSummaryPdf() {
     // Detalle por persona (página 2 en adelante)
     let detail = '';
     people.forEach((p, i) => {
-        const color = palette[i % palette.length];
+        const color = getEmployeeColor(p.person);
+        const shade = personTextColor(color, false);
         const initial = escapeHtml((p.person.trim().charAt(0) || '?').toUpperCase());
         let rows = '';
         for (const e of p.items) {
@@ -2030,9 +2094,9 @@ async function exportSummaryPdf() {
         }
         detail += `
             <div class="hx-person">
-                <div class="hx-phead" style="border-left:5px solid ${color};">
-                    <div class="hx-avatar" style="background:${color};">${initial}</div>
-                    <div class="hx-pname">${escapeHtml(p.person)}</div>
+                <div class="hx-phead" style="border-left:5px solid ${shade};">
+                    <div class="hx-avatar" style="background:${color};color:${onColorFor(color)};border:1.5px solid ${shade};">${initial}</div>
+                    <div class="hx-pname" style="color:${shade};">${escapeHtml(p.person)}</div>
                     <div class="hx-ptotal">${fmtDur(p.total)}</div>
                 </div>
                 <table class="hx-detail">${rows}</table>
@@ -2065,13 +2129,13 @@ async function exportSummaryPdf() {
             .hx-num { text-align:right; white-space:nowrap; }
             .hx-ok { color:#059669; }
             .hx-warn { color:#D97706; }
-            .hx-dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:8px; }
+            .hx-dot { display:inline-block; width:11px; height:11px; border-radius:50%; margin-right:8px; border:1.5px solid transparent; }
             .hx-track { height:8px; background:#E5E7EB; border-radius:4px; overflow:hidden; }
             .hx-fill { height:8px; border-radius:4px; }
             .hx-break { page-break-before:always; padding-top:4px; }
             .hx-person { margin-bottom:18px; page-break-inside:avoid; }
             .hx-phead { display:flex; align-items:center; background:#F9FAFB; border-radius:10px; padding:10px 14px; margin-bottom:4px; }
-            .hx-avatar { width:28px; height:28px; border-radius:50%; color:#fff; font-weight:700; text-align:center; line-height:28px; margin-right:10px; }
+            .hx-avatar { width:28px; height:28px; border-radius:50%; color:#fff; font-weight:700; text-align:center; line-height:25px; margin-right:10px; }
             .hx-pname { flex:1; font-size:14px; font-weight:700; }
             .hx-ptotal { font-size:14px; font-weight:700; color:#6C63FF; }
             .hx-detail td { padding:8px 10px; border-bottom:1px solid #F3F4F6; font-size:11.5px; }
@@ -3605,7 +3669,7 @@ function showPdfPreview(entries) {
         <span><strong>${new Set(entries.map(e => e.date)).size}</strong> días</span>`;
 
     document.getElementById('pdfPeopleChips').innerHTML = peopleList
-        .map(p => `<span class="person-chip" style="background:${getEmployeeColor(p)};">${escapeHtml(p)}</span>`)
+        .map(p => { const c = getEmployeeColor(p); return `<span class="person-chip" style="background:${c};color:${onColorFor(c)};">${escapeHtml(p)}</span>`; })
         .join('');
 
     const previewList = entries.slice(0, 40);
