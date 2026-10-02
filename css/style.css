@@ -1,4 +1,3 @@
-/* (estilos exactamente iguales al código proporcionado, sin cambios) */
         * { box-sizing: border-box; margin: 0; padding: 0; }
         :root {
             --primary: #6C63FF; --primary-dark: #5A52D5; --primary-light: #8B83FF;
@@ -8,7 +7,7 @@
                Los calcula applyTheme() en app.js según el color elegido en el perfil. */
             --primary-ink: #6C63FF; --primary-ink-light: #8B83FF;
             --on-primary: #FFFFFF; --primary-rgb: 108, 99, 255;
-            --text: #1A1A2E; --text-secondary: #6B7280; --text-light: #9CA3AF;
+            --text: #1A1A2E; --text-secondary: #4B5563; --text-light: #6B7280;
             --border: #E5E7EB; --shadow: 0 8px 30px rgba(var(--primary-rgb), 0.12);
             --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06);
             --radius: 20px; --radius-sm: 12px;
@@ -43,7 +42,7 @@
         .profile-chip {
             background: none; border: none; padding: 4px 8px 4px 4px; margin-left: -4px;
             border-radius: 14px; font-family: inherit; cursor: pointer;
-            text-align: left; transition: 0.2s; max-width: calc(100% - 100px);
+            text-align: left; transition: 0.2s; max-width: 100%;
         }
         .profile-chip:active { transform: scale(0.97); background: var(--primary-bg); }
         .profile-chip:focus-visible { outline: 2px solid var(--primary-ink); outline-offset: 2px; }
@@ -727,7 +726,7 @@
 :root[data-theme="dark"] {
     color-scheme: dark;
     --bg: #12131C; --card: #1C1D2A;
-    --text: #ECEDF4; --text-secondary: #A4A8B8; --text-light: #7C8196;
+    --text: #ECEDF4; --text-secondary: #A4A8B8; --text-light: #8F94A8;
     --border: #2E3042;
     --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
@@ -838,3 +837,75 @@
     text-decoration: underline; cursor: pointer;
 }
 [data-theme="dark"] .admin-advanced-link { color: #FCA5A5; }
+
+
+/* ============================================================
+   Mejoras de uso: avatar, leyenda del calendario, chips, links
+   ============================================================ */
+
+/* Avatar con iniciales en el header (se nota que se toca: lápiz chiquito) */
+.hd-avatar-wrap { position: relative; display: inline-flex; flex-shrink: 0; }
+.app-header .logo .hd-avatar {
+    width: 40px; height: 40px; border-radius: 50%; padding: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--primary); color: var(--on-primary);
+    font-size: 15px; font-weight: 700; letter-spacing: 0.3px;
+}
+.app-header .logo .hd-avatar i { font-size: 17px; padding: 0; background: none; color: inherit; border-radius: 0; }
+.app-header .logo .hd-avatar-edit {
+    position: absolute; right: -3px; bottom: -3px; width: 18px; height: 18px; border-radius: 50%;
+    background: var(--card); border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+}
+.app-header .logo .hd-avatar-edit i { font-size: 8px; padding: 0; background: none; color: var(--primary-ink); border-radius: 0; }
+
+/* Calendario: días fuera del período del Resumen apagados + leyenda */
+.calendar-grid .day-cell.out-cycle:not(.selected):not(.today) { color: var(--text-light); opacity: 0.5; }
+.calendar-grid .day-cell.other-month.in-cycle { opacity: 1; color: var(--text-secondary); }
+.calendar-grid .day-cell.other-month.out-cycle { opacity: 0.35; }
+.calendar-grid .day-cell.other-month.out-cycle.has-overtime { opacity: 0.6; }
+.cal-legend {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px;
+    margin: -6px 4px 14px; font-size: 12px; color: var(--text-light);
+}
+.cal-legend .lg { display: inline-flex; align-items: center; gap: 5px; }
+.cal-legend .lg-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.cal-legend .lg-dot.pending { background: #F59E0B; }
+.cal-legend .lg-dot.done { background: #10B981; }
+.cal-legend .lg-cycle { margin-left: auto; }
+
+/* Agregar extra desde la tarjeta del día */
+.day-add-btn {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    width: 100%; margin-top: 12px; padding: 12px; font-family: inherit;
+    font-size: 14px; font-weight: 600; color: var(--primary-ink);
+    background: transparent; border: 1.5px dashed var(--primary-ink);
+    border-radius: var(--radius-sm); cursor: pointer; transition: 0.15s;
+}
+.day-add-btn:active { transform: scale(0.98); background: var(--primary-bg); }
+.day-add-btn:focus-visible { outline: 2px solid var(--primary-ink); outline-offset: 2px; }
+
+/* Chips de personas en "Agregar" */
+.person-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; max-height: 120px; overflow-y: auto; }
+.person-chip {
+    display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px;
+    font-family: inherit; font-size: 13.5px; font-weight: 600; color: var(--text);
+    background: var(--card); border: 1.5px solid var(--border); border-radius: 999px;
+    cursor: pointer; transition: 0.15s;
+}
+.person-chip:active { transform: scale(0.96); }
+.person-chip.active { background: var(--primary-bg); border-color: var(--primary-ink); color: var(--primary-ink); }
+.person-chip:focus-visible { outline: 2px solid var(--primary-ink); outline-offset: 2px; }
+
+/* Links discretos al final del Resumen */
+.summary-footer { display: flex; flex-direction: column; align-items: center; gap: 4px; margin: 14px 0 8px; }
+.link-btn {
+    display: inline-flex; align-items: center; gap: 7px; padding: 10px 14px;
+    background: none; border: none; font-family: inherit; font-size: 13px; font-weight: 600;
+    color: var(--text-secondary); cursor: pointer; border-radius: var(--radius-sm);
+}
+.link-btn:active { background: var(--primary-bg); }
+.link-btn:focus-visible { outline: 2px solid var(--primary-ink); outline-offset: 2px; }
+.link-btn.danger { color: #DC2626; }
+[data-theme="dark"] .link-btn.danger { color: #F87171; }
+.empty-state .empty-hint { font-size: 13px; margin-top: 4px; opacity: 0.9; }
