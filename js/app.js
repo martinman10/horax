@@ -880,30 +880,71 @@ function onColorFor(hex) {
     const l = relLum(hexToRgb(hex));
     return contrastRatio(l, 1) >= 4.0 ? '#FFFFFF' : '#1A1A2E';
 }
+// ---- Apariencia (claro / oscuro / automático). Se guarda por dispositivo. ----
+const MODE_KEY = 'horax_mode';
+const DARK_CARD = [28, 29, 42]; // mismo valor que --card en modo oscuro
+function getModePref() { try { return localStorage.getItem(MODE_KEY) || 'auto'; } catch (_) { return 'auto'; } }
+function isDarkNow() {
+    const m = getModePref();
+    if (m === 'dark') return true;
+    if (m === 'light') return false;
+    return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+}
+let lastThemeHex = THEME_DEFAULT;
+function applyAppearance() {
+    document.documentElement.setAttribute('data-theme', isDarkNow() ? 'dark' : 'light');
+    applyTheme(lastThemeHex); // recalcula los tonos del color del perfil para claro u oscuro
+}
+function setModePref(m) {
+    try { localStorage.setItem(MODE_KEY, m); } catch (_) {}
+    applyAppearance();
+    renderModeSeg();
+}
+function renderModeSeg() {
+    const seg = document.getElementById('modeSeg');
+    if (!seg) return;
+    const cur = getModePref();
+    seg.querySelectorAll('button').forEach(b => b.classList.toggle('sel', b.dataset.mode === cur));
+}
+try {
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (getModePref() === 'auto') applyAppearance(); });
+} catch (_) {}
+
 function applyTheme(hex) {
     const found = THEME_COLORS.find(c => c.hex.toLowerCase() === String(hex || '').toLowerCase());
     hex = found ? found.hex : THEME_DEFAULT;
+    lastThemeHex = hex;
+    const dark = isDarkNow();
     const rgb = hexToRgb(hex);
     const BLACK = [0, 0, 0], WHITE = [255, 255, 255];
-    // versión legible como texto/ícono sobre fondo blanco (si el color es muy claro, se oscurece)
-    let ink = rgb;
-    for (let i = 1; i <= 20 && contrastRatio(relLum(ink), 1) < 4.2; i++) ink = mixRgb(rgb, BLACK, i * 0.05);
+    let ink = rgb, bg;
+    if (dark) {
+        // sobre fondo oscuro: si el color es muy oscuro se aclara; el tinte de fondo es el color mezclado con la tarjeta oscura
+        const cardLum = relLum(DARK_CARD);
+        for (let i = 1; i <= 20 && contrastRatio(relLum(ink), cardLum) < 4.5; i++) ink = mixRgb(rgb, WHITE, i * 0.05);
+        bg = mixRgb(DARK_CARD, rgb, 0.22);
+    } else {
+        // versión legible como texto/ícono sobre fondo blanco (si el color es muy claro, se oscurece)
+        for (let i = 1; i <= 20 && contrastRatio(relLum(ink), 1) < 4.2; i++) ink = mixRgb(rgb, BLACK, i * 0.05);
+        // fondo suave: si el color es muy claro, el tinte tiene que ser más fuerte para que se note
+        bg = mixRgb(rgb, WHITE, relLum(rgb) > 0.5 ? 0.6 : 0.88);
+    }
     const st = document.documentElement.style;
     st.setProperty('--primary', hex);
     st.setProperty('--primary-rgb', rgb.join(', '));
     st.setProperty('--primary-dark', rgbToHex(mixRgb(rgb, BLACK, 0.15)));
     st.setProperty('--primary-light', rgbToHex(mixRgb(rgb, WHITE, 0.2)));
-    // fondo suave: si el color es muy claro, el tinte tiene que ser más fuerte para que se note
-    st.setProperty('--primary-bg', rgbToHex(mixRgb(rgb, WHITE, relLum(rgb) > 0.5 ? 0.6 : 0.88)));
+    st.setProperty('--primary-bg', rgbToHex(bg));
     st.setProperty('--primary-ink', rgbToHex(ink));
     st.setProperty('--primary-ink-light', rgbToHex(mixRgb(ink, WHITE, 0.25)));
     st.setProperty('--on-primary', onColorFor(hex));
     const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute('content', hex);
+    if (meta) meta.setAttribute('content', dark ? '#12131C' : hex);
     try { localStorage.setItem(THEME_KEY, hex); } catch (_) {}
 }
 // Al abrir, usar el último color usado (evita el "salto" de color mientras carga el perfil)
 try { applyTheme(localStorage.getItem(THEME_KEY)); } catch (_) {}
+applyAppearance();
 let pendingTheme = THEME_DEFAULT;
 function renderThemeSwatches() {
     const box = document.getElementById('themeSwatches');
@@ -971,6 +1012,7 @@ function openProfileModal(firstTime) {
     lastInput.value = last;
     pendingTheme = (userProfile && userProfile.themeColor) || THEME_DEFAULT;
     renderThemeSwatches();
+    renderModeSeg();
 
     document.getElementById('profileModalTitle').innerHTML =
         `<i class="fas fa-id-badge" style="color:var(--primary-ink);margin-right:8px;"></i>` +
@@ -3823,8 +3865,10 @@ function init() {
             okText: 'Cerrar sesión',
             cancelText: 'Cancelar'
         });
-        if (ok) auth.signOut();
+        if (ok) { closeProfileModal(true); auth.signOut(); }
     });
+    const modeSeg = document.getElementById('modeSeg');
+    if (modeSeg) modeSeg.querySelectorAll('button').forEach(b => b.addEventListener('click', () => setModePref(b.dataset.mode)));
 
     const profileChip = document.getElementById('profileChip');
     if (profileChip) {
