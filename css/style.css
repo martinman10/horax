@@ -708,3 +708,50 @@
 @keyframes installSlideR { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
 @keyframes installSlideL { from { opacity: 0; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { #installSlide.slide-in-r, #installSlide.slide-in-l { animation: none; } }
+
+
+/* ================= SELECTOR DE APARIENCIA ================= */
+.mode-seg { display: flex; gap: 6px; background: var(--bg); border: 1.5px solid var(--border); border-radius: var(--radius-sm); padding: 4px; }
+.mode-seg button {
+    flex: 1; border: none; background: transparent; color: var(--text-secondary);
+    font-family: inherit; font-size: 13px; font-weight: 600; padding: 9px 4px;
+    border-radius: 9px; cursor: pointer; transition: 0.2s;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+}
+.mode-seg button.sel { background: var(--primary); color: var(--on-primary); }
+
+/* ================= MODO OSCURO =================
+   Los colores del perfil (--primary, --primary-ink, --primary-bg...) los calcula
+   applyTheme() en app.js, que también sabe si está en oscuro. Acá solo van los
+   fondos, textos y los colores fijos que no dependen del perfil. */
+:root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #12131C; --card: #1C1D2A;
+    --text: #ECEDF4; --text-secondary: #A4A8B8; --text-light: #7C8196;
+    --border: #2E3042;
+    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+[data-theme="dark"] #app { box-shadow: none; }
+[data-theme="dark"] .modal-overlay { background: rgba(0, 0, 0, 0.65); }
+[data-theme="dark"] .header-actions button:active,
+[data-theme="dark"] .month-nav button:active { background: var(--primary-bg); }
+[data-theme="dark"] .ot-item .ot-check,
+[data-theme="dark"] .sd-check { background: var(--card); }
+[data-theme="dark"] .ot-item .ot-check.checked,
+[data-theme="dark"] .sd-check.checked { background: #10B981; }
+[data-theme="dark"] .btn-google { background: var(--card); color: var(--text); }
+[data-theme="dark"] .toast { background: #ECEDF4; color: #1A1A2E; }
+[data-theme="dark"] .badge-done { background: rgba(16, 185, 129, 0.2); color: #6EE7B7; }
+[data-theme="dark"] .badge-pending { background: rgba(245, 158, 11, 0.2); color: #FCD34D; }
+[data-theme="dark"] .confirm-icon { background: rgba(245, 158, 11, 0.18); color: #FBBF24; }
+[data-theme="dark"] .confirm-icon.danger { background: rgba(239, 68, 68, 0.18); color: #F87171; }
+[data-theme="dark"] .audit-icon { background: var(--primary-bg); }
+[data-theme="dark"] .audit-item.audit-delete .audit-icon { background: rgba(239, 68, 68, 0.18); color: #F87171; }
+[data-theme="dark"] .audit-item.audit-update .audit-icon { background: rgba(245, 158, 11, 0.18); color: #FBBF24; }
+[data-theme="dark"] .btn-danger-soft { background: rgba(239, 68, 68, 0.12); border-color: rgba(239, 68, 68, 0.45); color: #FCA5A5; }
+[data-theme="dark"] .btn-danger-soft:active { background: rgba(239, 68, 68, 0.22); }
+[data-theme="dark"] .undo-import button { background: rgba(245, 158, 11, 0.18); color: #FCD34D; }
+[data-theme="dark"] .badge-admin { background: rgba(139, 92, 246, 0.22); color: #C4B5FD; }
+[data-theme="dark"] .badge-encargada { background: rgba(59, 130, 246, 0.22); color: #93C5FD; }
+[data-theme="dark"] .install-status { background: rgba(16, 185, 129, 0.15); color: #6EE7B7; }
+[data-theme="dark"] .install-warn { background: rgba(249, 115, 22, 0.15); color: #FDBA74; }
