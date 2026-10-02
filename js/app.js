@@ -1550,10 +1550,9 @@ function renderCalendar() {
     grid.innerHTML = html;
     const legend = document.getElementById('calLegend');
     if (legend) {
-        const cycName = monthName.charAt(0).toUpperCase() + monthName.slice(1);
         legend.innerHTML = `<span class="lg"><i class="lg-dot pending"></i>Pendiente</span>`
             + `<span class="lg"><i class="lg-dot done"></i>Hecha</span>`
-            + `<span class="lg-cycle">Resumen de ${cycName}: ${fmtDM(cyc.start)} al ${fmtDM(cyc.end)}</span>`;
+            + `<span class="lg-cycle">Resumen: ${fmtDM(cyc.start)} al ${fmtDM(cyc.end)}</span>`;
     }
     renderTodayBarCalendar();
 
@@ -1882,7 +1881,9 @@ function renderSummary() {
     if (filterBar) filterBar.style.display = entries.length > 0 ? 'flex' : 'none';
     // Con pocas personas el buscador sobra: solo aparece si hay más de 5 (o si ya hay algo escrito)
     const searchBox = filterBar && filterBar.querySelector('.summary-search');
-    if (searchBox) searchBox.style.display = (summaryPeopleCount > 5 || summaryFilter.trim() !== '') ? '' : 'none';
+    const showSearch = summaryPeopleCount > 5 || summaryFilter.trim() !== '';
+    if (searchBox) searchBox.style.display = showSearch ? '' : 'none';
+    if (filterBar) filterBar.classList.toggle('no-search', !showSearch);
 
     // "Vaciar período": link discreto al final del Resumen, solo si hay algo para borrar
     const clearBtn = document.getElementById('clearBtn');
