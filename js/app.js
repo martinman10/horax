@@ -1817,8 +1817,9 @@ function renderSummary() {
             byPerson.set(e.person, p);
         }
         summaryPeopleCount = byPerson.size;
+        const hasPend = r => (r.total - r.done) > 0.001 ? 1 : 0;
         const summaryAll = Array.from(byPerson.values())
-            .sort((a, b) => b.total - a.total || a.person.localeCompare(b.person, 'es'));
+            .sort((a, b) => hasPend(b) - hasPend(a) || b.total - a.total || a.person.localeCompare(b.person, 'es'));
 
         // Filtros: texto buscado y "Ocultar ya hechas"
         const q = normalizeText(summaryFilter.trim());
@@ -1871,6 +1872,9 @@ function renderSummary() {
                     <button class="sd-btn sd-check ${e.done ? 'checked' : ''}" data-id="${e.id}" title="${e.done ? 'Hecha' : 'Marcar como hecha'}">${e.done ? '<i class="fas fa-check"></i>' : ''}</button>
                     <button class="sd-btn sd-edit" data-id="${e.id}" title="Editar"><i class="fas fa-pen"></i></button>
                 </div>`;
+            }
+            if (pend > 0.001) {
+                html += `<button type="button" class="sum-markall" data-idx="${idx}"><i class="fas fa-check-double"></i> Marcar todas como hechas</button>`;
             }
             html += `</div></div></div>`;
         }
@@ -1928,6 +1932,26 @@ function renderSummary() {
         el.addEventListener('click', ev => {
             ev.stopPropagation();
             openEditModal(parseInt(el.dataset.id, 10));
+        });
+    });
+
+    container.querySelectorAll('.sum-markall').forEach(el => {
+        el.addEventListener('click', async ev => {
+            ev.stopPropagation();
+            const row = summaryRows[Number(el.dataset.idx)];
+            if (!row) return;
+            const ids = new Set(row.items.filter(e => !e.done).map(e => e.id));
+            if (ids.size === 0) return;
+            const ok = await showConfirm({
+                title: 'Marcar todas como hechas',
+                message: `Se van a marcar ${ids.size} extra${ids.size > 1 ? 's' : ''} de ${row.person} (${fmtDurShort(row.total - row.done)}) como hechas.`,
+                okText: 'Marcar todas'
+            });
+            if (!ok) return;
+            overtimeData.forEach(e => { if (ids.has(e.id)) e.done = true; });
+            saveData(); renderAll();
+            showToast(`${row.person} quedó al día`);
+            logAudit('update', `Marcó como hechas ${ids.size} extra${ids.size > 1 ? 's' : ''} de ${row.person}`, null);
         });
     });
 
