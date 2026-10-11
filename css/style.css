@@ -959,3 +959,8 @@
 .sum-total-hours { font-weight: 800; font-size: 22px; }
 .sum-total-split { flex-basis: 100%; font-size: 13px; color: var(--text-secondary); }
 .sum-total-split b { color: var(--text); }
+
+/* Resumen: marcar todas como hechas */
+.sum-markall { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; margin: 10px 0 4px; padding: 11px 14px; border: 1.5px solid #10B981; border-radius: var(--radius-sm); background: transparent; color: #059669; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+.sum-markall:active { background: rgba(16, 185, 129, 0.12); transform: scale(.98); }
+[data-theme="dark"] .sum-markall { color: #6EE7B7; border-color: rgba(16, 185, 129, 0.6); }
