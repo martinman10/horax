@@ -1835,43 +1835,51 @@ function renderSummary() {
         } else {
         const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
         let sumTotal = 0, sumDone = 0;
-        html += `<div class="summary-table"><table><thead><tr>
-            <th>Persona</th><th>Horas</th><th>Hechas</th><th>Pendientes</th>
-        </tr></thead><tbody>`;
+        html += `<div class="summary-list">`;
         for (const row of summary) {
             sumTotal += row.total; sumDone += row.done;
             const color = getEmployeeColor(row.person);
             const idx = summary.indexOf(row);
             const open = expandedPeople.has(row.person);
-            html += `<tr class="sum-row ${open ? 'open' : ''}" data-idx="${idx}">
-                <td class="person-name" style="color:${personTextColor(color)};"><i class="fas fa-chevron-right sum-arrow"></i>${personDotHtml(color)}${escapeHtml(row.person)}</td>
-                <td>${fmtDurShort(row.total)}</td>
-                <td><span class="badge badge-done">${fmtDurShort(row.done)}</span></td>
-                <td><span class="badge badge-pending">${fmtDurShort(row.total - row.done)}</span></td>
-            </tr>`;
+            const pend = row.total - row.done;
+            const pct = row.total > 0 ? Math.round((row.done / row.total) * 100) : 0;
+            html += `<div class="sum-card">
+                <div class="sum-row ${open ? 'open' : ''}" data-idx="${idx}">
+                    <i class="fas fa-chevron-right sum-arrow"></i>
+                    <div class="sum-main">
+                        <div class="sum-top">
+                            <div class="sum-name" style="color:${personTextColor(color)};">${personDotHtml(color)}<span>${escapeHtml(row.person)}</span></div>
+                            <div class="sum-hours">${fmtDurShort(row.total)}</div>
+                        </div>
+                        <div class="sum-bar"><div class="sum-bar-fill" style="width:${pct}%;"></div></div>
+                        <div class="sum-caption">
+                            <span class="sum-cap-done"><i class="fas fa-check"></i> ${fmtDurShort(row.done)} hechas</span>
+                            <span class="sum-cap-pend ${pend > 0 ? 'has' : ''}">${fmtDurShort(pend)} pendientes</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="sum-detail ${open ? 'open' : ''}" data-idx="${idx}"><div class="sum-detail-list">`;
             const items = row.items.filter(e => !(hideDone && e.done)).sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start));
-            html += `<tr class="sum-detail ${open ? 'open' : ''}" data-idx="${idx}"><td colspan="4"><div class="sum-detail-list">`;
             for (const e of items) {
                 const day = Number(e.date.slice(8, 10));
                 const mon = MESES[Number(e.date.slice(5, 7)) - 1];
                 const wd = getDayName(e.date).slice(0, 3);
                 html += `<div class="sum-detail-item ${e.done ? 'done' : ''}">
-                    <span class="sd-date"><b>${day}</b> ${wd} · ${mon}</span>
-                    <span class="sd-time">${e.start} – ${e.end}</span>
+                    <div class="sd-day"><b>${day}</b><small>${wd}</small></div>
+                    <div class="sd-info"><span class="sd-time">${e.start} – ${e.end}</span><span class="sd-mon">${mon}</span></div>
                     <span class="sd-h">${fmtDur(entryHours(e))}</span>
                     <button class="sd-btn sd-check ${e.done ? 'checked' : ''}" data-id="${e.id}" title="${e.done ? 'Hecha' : 'Marcar como hecha'}">${e.done ? '<i class="fas fa-check"></i>' : ''}</button>
                     <button class="sd-btn sd-edit" data-id="${e.id}" title="Editar"><i class="fas fa-pen"></i></button>
                 </div>`;
             }
-            html += `</div></td></tr>`;
+            html += `</div></div></div>`;
         }
-        html += `<tr style="font-weight:700;">
-                <td>${filterOn ? 'Total (filtrado)' : 'Total'}</td>
-                <td>${fmtDurShort(sumTotal)}</td>
-                <td>${fmtDurShort(sumDone)}</td>
-                <td>${fmtDurShort(sumTotal - sumDone)}</td>
-            </tr>`;
-        html += `</tbody></table></div>`;
+        html += `<div class="sum-total-card">
+                <span class="sum-total-label">${filterOn ? 'Total (filtrado)' : 'Total'}</span>
+                <span class="sum-total-hours">${fmtDurShort(sumTotal)}</span>
+                <span class="sum-total-split"><b>${fmtDurShort(sumDone)}</b> hechas · <b>${fmtDurShort(sumTotal - sumDone)}</b> pendientes</span>
+            </div>`;
+        html += `</div>`;
         }
     }
     container.innerHTML = html;
