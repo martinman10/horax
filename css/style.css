@@ -964,3 +964,23 @@
 .sum-markall { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; margin: 10px 0 4px; padding: 11px 14px; border: 1.5px solid #10B981; border-radius: var(--radius-sm); background: transparent; color: #059669; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
 .sum-markall:active { background: rgba(16, 185, 129, 0.12); transform: scale(.98); }
 [data-theme="dark"] .sum-markall { color: #6EE7B7; border-color: rgba(16, 185, 129, 0.6); }
+
+/* ===== Admin: lista de personas con deslizar para eliminar ===== */
+.admin-hint { font-size: 12px; color: var(--text-light); margin: -4px 0 10px; }
+.admin-people-list { display: flex; flex-direction: column; gap: 8px; }
+.person-row { position: relative; border-radius: 12px; overflow: hidden; }
+.person-row-del {
+    position: absolute; top: 0; right: 0; bottom: 0; width: 96px;
+    border: none; background: #EF4444; color: #fff; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    font-size: 12px; font-weight: 700;
+    visibility: hidden; transition: visibility 0s linear 0.2s;
+}
+.person-row.open .person-row-del, .person-row.dragging .person-row-del { visibility: visible; transition-delay: 0s; }
+.person-row-del i { font-size: 15px; }
+.person-row-fg {
+    position: relative; display: flex; align-items: center; gap: 10px;
+    padding: 12px 14px; background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    font-size: 14px; font-weight: 600; transition: transform 0.2s ease;
+    touch-action: pan-y; user-select: none; -webkit-user-select: none;
+}
