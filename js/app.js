@@ -103,6 +103,97 @@ let availableLocals = [];       // [{id, name}] — solo se llena para admin
 let localDocUnsubscribe = null;
 function lastLocalKey(uid) { return 'horax_last_local_' + uid; }
 
+// ============================================================
+//  PERSONAS COMPARTIDAS ENTRE TODOS LOS LOCALES
+//  Se guardan en la colección "people" (un documento por persona). Así, una
+//  persona cargada en un local aparece como opción en todos los demás.
+//  El documento "_migrado" avisa que ya se juntaron las personas que había
+//  antes en los locales (lo hace una sola vez la cuenta admin).
+// ============================================================
+let globalPeople = [];          // nombres, ya ordenados
+let peopleMigrated = false;
+let peopleMigrating = false;
+let peopleUnsubscribe = null;
+
+// "Martín", "martin" y " Martin  " son la misma persona
+function personKey(name) { return normalizeText(name).replace(/\s+/g, ' ').trim(); }
+function personDocId(name) { return personKey(name).replace(/[\/.#$\[\]]/g, '').replace(/ /g, '-').slice(0, 120) || 'sin-nombre'; }
+function peopleCollectionRef() { return db.collection('people'); }
+
+function subscribeToPeople() {
+    if (peopleUnsubscribe) { peopleUnsubscribe(); peopleUnsubscribe = null; }
+    peopleUnsubscribe = peopleCollectionRef().onSnapshot(snap => {
+        const names = [];
+        peopleMigrated = false;
+        snap.docs.forEach(d => {
+            if (d.id === '_migrado') { peopleMigrated = true; return; }
+            const n = d.data() && d.data().name;
+            if (n) names.push(n);
+        });
+        names.sort((a, b) => a.localeCompare(b, 'es'));
+        globalPeople = names;
+        refreshPeopleUi();
+        if (!peopleMigrated) migratePeopleOnce();
+    }, err => console.error('[HORAX] Error escuchando la lista de personas:', err));
+}
+
+// Guarda a la persona en la lista compartida si todavía no está
+function registerPerson(name) {
+    name = String(name || '').trim();
+    if (!name || !currentUser) return;
+    const key = personKey(name);
+    if (!key || globalPeople.some(p => personKey(p) === key)) return;
+    globalPeople = globalPeople.concat(name).sort((a, b) => a.localeCompare(b, 'es')); // se ve al toque
+    peopleCollectionRef().doc(personDocId(name)).set({
+        name,
+        key,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        createdBy: currentUser.email || ''
+    }).catch(err => console.error('[HORAX] Error guardando la persona:', err));
+}
+
+// Solo la cuenta admin, una sola vez: junta las personas que ya estaban cargadas en todos los locales
+async function migratePeopleOnce() {
+    if (peopleMigrating || peopleMigrated || currentRole !== 'admin') return;
+    peopleMigrating = true;
+    try {
+        const flag = await peopleCollectionRef().doc('_migrado').get({ source: 'server' });
+        if (flag.exists) return;
+        const snap = await localsCollectionRef().get();
+        const found = new Map();
+        snap.docs.forEach(d => {
+            const entries = (d.data() && d.data().entries) || [];
+            entries.forEach(e => {
+                const n = String((e && e.person) || '').trim();
+                const k = personKey(n);
+                if (k && !found.has(k)) found.set(k, n);
+            });
+        });
+        const batch = db.batch();
+        found.forEach((name, key) => {
+            if (globalPeople.some(p => personKey(p) === key)) return;
+            batch.set(peopleCollectionRef().doc(personDocId(name)), {
+                name, key,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                createdBy: 'migracion'
+            });
+        });
+        batch.set(peopleCollectionRef().doc('_migrado'), { at: firebase.firestore.FieldValue.serverTimestamp() });
+        await batch.commit();
+    } catch (err) {
+        console.error('[HORAX] No se pudo juntar la lista de personas:', err);
+    } finally {
+        peopleMigrating = false;
+    }
+}
+
+// Actualiza el desplegable de nombres y los botones de personas en "Agregar"
+function refreshPeopleUi() {
+    const datalist = document.getElementById('personList');
+    if (datalist) datalist.innerHTML = getPeople().map(p => `<option value="${escapeHtml(p)}">`).join('');
+    renderPersonChips();
+}
+
 function showLoading(show) {
     const el = document.getElementById('appLoading');
     if (el) el.style.display = show ? 'flex' : 'none';
@@ -150,6 +241,7 @@ async function handleSignedIn(user) {
 
     if (data.profile && data.profile.firstName) userProfile = data.profile;
     currentRole = data.role;
+    subscribeToPeople(); // lista de personas compartida entre locales
 
     if (currentRole === 'admin') {
         try {
@@ -402,6 +494,8 @@ function renderLocalBar() {
 let adminUsers = [];          // cache de {uid, email, role, localId, profile} para el panel
 let adminUsersLoaded = false;
 const ROLE_LABEL = { admin: 'Admin', encargada: 'Encargada' };
+// El admin "de callado": sigue siendo admin y ve todos los locales, pero no aparece en la lista de usuarios
+function isHiddenAdmin(u) { return !!u && (u.email || '').toLowerCase() === ADMIN_EMAIL.toLowerCase(); }
 
 function updateAdminTabVisibility() {
     const btn = document.getElementById('adminTabBtn');
@@ -446,11 +540,12 @@ async function loadAdminUsers() {
 function renderAdminUsersList() {
     const list = document.getElementById('adminUsersList');
     if (!list) return;
-    if (adminUsers.length === 0) {
+    const visibleUsers = adminUsers.filter(u => !isHiddenAdmin(u));
+    if (visibleUsers.length === 0) {
         list.innerHTML = `<div class="empty-state"><i class="fas fa-user-slash"></i><p>No hay usuarios cargados todavía</p></div>`;
         return;
     }
-    const sorted = [...adminUsers].sort((a, b) => (a.email || '').localeCompare(b.email || '', 'es'));
+    const sorted = [...visibleUsers].sort((a, b) => (a.email || '').localeCompare(b.email || '', 'es'));
     list.innerHTML = sorted.map(u => {
         const name = (u.profile && [u.profile.firstName, u.profile.lastName].filter(Boolean).join(' ').trim()) || '(sin nombre)';
         const isSelf = currentUser && u.uid === currentUser.uid;
@@ -828,6 +923,10 @@ function handleSignedOut() {
     availableLocals = [];
     adminUsers = [];
     adminUsersLoaded = false;
+    if (peopleUnsubscribe) { peopleUnsubscribe(); peopleUnsubscribe = null; }
+    globalPeople = [];
+    peopleMigrated = false;
+    peopleMigrating = false;
     applyProfileToHeader();
     closeProfileModal(true);
     overtimeData = [];
@@ -1396,9 +1495,16 @@ function escapeHtml(str) {
         .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 function getPeople() {
-    const set = new Set();
-    for (const e of overtimeData) set.add(e.person);
-    return Array.from(set).sort((a,b) => a.localeCompare(b, 'es'));
+    const byKey = new Map();
+    globalPeople.forEach(n => byKey.set(personKey(n), n));
+    // mientras no se haya juntado la lista compartida, también se usan las personas de este local
+    if (!peopleMigrated) {
+        for (const e of overtimeData) {
+            const k = personKey(e.person);
+            if (k && !byKey.has(k)) byKey.set(k, e.person);
+        }
+    }
+    return Array.from(byKey.values()).sort((a, b) => a.localeCompare(b, 'es'));
 }
 // Chips de personas en "Agregar": un toque en vez de escribir el nombre
 function renderPersonChips() {
@@ -1446,6 +1552,7 @@ function addEntry(date, start, end, person, comment) {
     const maxId = overtimeData.reduce((m, e) => Math.max(m, e.id), 0);
     const entry = { id: maxId + 1, date, start, end, person: person.trim(), done: false, comment: (comment || '').trim() };
     overtimeData.push(entry);
+    registerPerson(entry.person);
     saveData(); renderAll(); showToast(`Extra agregada para ${person}`);
     logAudit('create', `Agregó una extra para ${entry.person} el ${fmtDM(date)} de ${start} a ${end}`, entry.id);
 }
@@ -1455,6 +1562,7 @@ function editEntry(id, date, start, end, person, comment) {
     const before = { date: entry.date, start: entry.start, end: entry.end, person: entry.person, comment: entry.comment };
     entry.date = date; entry.start = start; entry.end = end; entry.person = person.trim();
     entry.comment = (comment || '').trim();
+    registerPerson(entry.person);
     saveData(); renderAll(); showToast('Extra actualizada');
     logAudit('update', buildEditSummary(before, entry), id);
 }
@@ -2342,9 +2450,7 @@ async function exportSummaryPdf() {
 function renderAll() {
     renderCalendar();
     renderSummary();
-    const datalist = document.getElementById('personList');
-    if (datalist) datalist.innerHTML = getPeople().map(p => `<option value="${escapeHtml(p)}">`).join('');
-    renderPersonChips();
+    refreshPeopleUi();
     updateBadges();
     renderUndoImport();
 }
@@ -3844,6 +3950,7 @@ function importPdfData() {
         comment: item.auto ? 'Auto: pasó de las 8 hs del día' : ''
     }));
     overtimeData = overtimeData.concat(newEntries);
+    new Set(newEntries.map(e => e.person)).forEach(n => registerPerson(n));
     saveData();
     renderAll();
     showToast(`Importadas ${newEntries.length} extras` + (skipped ? ` (${skipped} ya estaban)` : '') + (newEntries.length ? ' · podés deshacer en Importar' : ''), newEntries.length ? 4500 : 2400);
