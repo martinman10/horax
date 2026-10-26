@@ -192,6 +192,152 @@ function refreshPeopleUi() {
     const datalist = document.getElementById('personList');
     if (datalist) datalist.innerHTML = getPeople().map(p => `<option value="${escapeHtml(p)}">`).join('');
     renderPersonChips();
+    renderAdminPeopleList();
+}
+
+// ============================================================
+//  ADMIN: lista de personas (deslizar hacia la izquierda para eliminar)
+// ============================================================
+const PERSON_SWIPE_W = 96; // ancho del botón rojo "Eliminar"
+
+function closePersonRow(row) {
+    row.classList.remove('open');
+    const fg = row.querySelector('.person-row-fg');
+    if (fg) fg.style.transform = '';
+}
+
+function renderAdminPeopleList() {
+    const list = document.getElementById('adminPeopleList');
+    if (!list || currentRole !== 'admin') return;
+    const people = getPeople();
+    if (people.length === 0) {
+        list.innerHTML = `<div class="empty-state"><i class="fas fa-user-slash"></i><p>Todavía no hay personas cargadas</p></div>`;
+    } else {
+        list.innerHTML = people.map(p => `<div class="person-row">
+            <button type="button" class="person-row-del" data-person="${escapeHtml(p)}"><i class="fas fa-trash-alt"></i>Eliminar</button>
+            <div class="person-row-fg">${personDotHtml(getEmployeeColor(p))}<span>${escapeHtml(p)}</span></div>
+        </div>`).join('');
+    }
+    if (list.dataset.bound) return;
+    list.dataset.bound = '1';
+
+    let active = null, startX = 0, startY = 0, base = 0, decided = false, dragging = false;
+    list.addEventListener('pointerdown', e => {
+        const fg = e.target.closest('.person-row-fg');
+        if (!fg) return;
+        const row = fg.parentElement;
+        list.querySelectorAll('.person-row.open').forEach(r => { if (r !== row) closePersonRow(r); });
+        active = fg; startX = e.clientX; startY = e.clientY;
+        base = row.classList.contains('open') ? -PERSON_SWIPE_W : 0;
+        decided = false; dragging = false;
+    });
+    list.addEventListener('pointermove', e => {
+        if (!active) return;
+        const dx = e.clientX - startX, dy = e.clientY - startY;
+        if (!decided) {
+            if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
+            decided = true;
+            dragging = Math.abs(dx) > Math.abs(dy);
+            if (!dragging) { active = null; return; }
+            try { active.setPointerCapture(e.pointerId); } catch (_) {}
+            active.style.transition = 'none';
+            active.parentElement.classList.add('dragging');
+        }
+        active.style.transform = `translateX(${Math.max(-PERSON_SWIPE_W, Math.min(0, base + dx))}px)`;
+    });
+    const endSwipe = () => {
+        if (!active) return;
+        const fg = active; active = null;
+        if (!dragging) return;
+        const row = fg.parentElement;
+        fg.style.transition = '';
+        row.classList.remove('dragging');
+        const m = fg.style.transform.match(/-?\d+(\.\d+)?/);
+        const x = m ? parseFloat(m[0]) : 0;
+        if (x < -PERSON_SWIPE_W / 2) { row.classList.add('open'); fg.style.transform = `translateX(${-PERSON_SWIPE_W}px)`; }
+        else closePersonRow(row);
+    };
+    list.addEventListener('pointerup', endSwipe);
+    list.addEventListener('pointercancel', endSwipe);
+    list.addEventListener('click', e => {
+        const btn = e.target.closest('.person-row-del');
+        if (btn) deletePersonEverywhere(btn.dataset.person);
+    });
+}
+
+// Elimina a la persona de la lista y borra sus extras PENDIENTES en todos los locales.
+// Las extras ya hechas no se tocan.
+async function deletePersonEverywhere(name) {
+    if (currentRole !== 'admin') return;
+    const key = personKey(name);
+    if (!key) return;
+    if (!peopleMigrated) { showToast('Esperá un momento y probá de nuevo'); return; }
+
+    showLoading(true);
+    const affected = []; // [{id, name, pending}]
+    try {
+        const snap = await localsCollectionRef().get();
+        snap.docs.forEach(d => {
+            const data = d.data() || {};
+            const pending = (data.entries || []).filter(e => personKey(e.person) === key && !e.done).length;
+            if (pending) affected.push({ id: d.id, name: data.name || d.id, pending });
+        });
+    } catch (err) {
+        console.error('[HORAX] Error revisando los locales:', err);
+        showLoading(false);
+        showToast('No se pudo revisar los locales, probá de nuevo');
+        return;
+    }
+    showLoading(false);
+
+    const total = affected.reduce((s, l) => s + l.pending, 0);
+    const detail = total === 0
+        ? 'No tiene extras pendientes.'
+        : `Se van a borrar ${total} ${total === 1 ? 'extra pendiente' : 'extras pendientes'} (${affected.map(l => `${l.name}: ${l.pending}`).join(', ')}).`;
+    const ok = await showConfirm({
+        title: `¿Eliminar a ${name}?`,
+        message: `Va a dejar de aparecer en las opciones de todos los locales. ${detail} Las extras que ya están hechas se mantienen. Esta acción no se puede deshacer.`,
+        okText: 'Eliminar',
+        cancelText: 'Cancelar',
+        danger: true
+    });
+    if (!ok) return;
+
+    showLoading(true);
+    try {
+        const actor = auditActor();
+        for (const loc of affected) {
+            await db.runTransaction(async tx => {
+                const ref = localDocRef(loc.id);
+                const doc = await tx.get(ref);
+                const entries = (doc.exists && doc.data().entries) || [];
+                tx.update(ref, { entries: entries.filter(e => !(personKey(e.person) === key && !e.done)) });
+            });
+            auditLogRef(loc.id).add({
+                action: 'delete',
+                summary: `Eliminó a ${name} de la lista y borró ${loc.pending} ${loc.pending === 1 ? 'extra pendiente' : 'extras pendientes'}`,
+                entryId: null,
+                byName: actor.name,
+                byEmail: actor.email,
+                at: firebase.firestore.FieldValue.serverTimestamp()
+            }).catch(err => console.error('[HORAX] Error guardando auditoría:', err));
+        }
+        const ids = new Set([personDocId(name)]);
+        const q = await peopleCollectionRef().where('key', '==', key).get();
+        q.docs.forEach(d => ids.add(d.id));
+        const batch = db.batch();
+        ids.forEach(id => batch.delete(peopleCollectionRef().doc(id)));
+        await batch.commit();
+    } catch (err) {
+        console.error('[HORAX] Error eliminando a la persona:', err);
+        showLoading(false);
+        showToast('No se pudo eliminar del todo, probá de nuevo');
+        return;
+    }
+    showLoading(false);
+    globalPeople = globalPeople.filter(p => personKey(p) !== key);
+    refreshPeopleUi();
+    showToast(`${name} eliminada`);
 }
 
 function showLoading(show) {
@@ -513,6 +659,7 @@ function localNameById(id) {
 // tabAdmin se muestra: se llama cada vez que se entra a ese tab.
 function renderAdminPanel() {
     if (currentRole !== 'admin') return;
+    renderAdminPeopleList();
     if (adminUsersLoaded) { renderAdminUsersList(); renderAdminLocalsList(); }
     loadAdminUsers(); // igual refresca en segundo plano por si algo cambió
 }
