@@ -127,8 +127,9 @@ function subscribeToPeople() {
         peopleMigrated = false;
         snap.docs.forEach(d => {
             if (d.id === '_migrado') { peopleMigrated = true; return; }
-            const n = d.data() && d.data().name;
-            if (n) names.push(n);
+            const data = d.data() || {};
+            if (data.deleted) { if (currentRole === 'admin') d.ref.delete().catch(() => {}); return; } // resto de una prueba anterior
+            if (data.name) names.push(data.name);
         });
         names.sort((a, b) => a.localeCompare(b, 'es'));
         globalPeople = names;
@@ -2274,7 +2275,7 @@ function updateBadges() {
 
 // Arma el CSV del período del Resumen que se está viendo
 function buildSummaryCsv() {
-    const entries = getEntriesForSummary();
+    const entries = getEntriesForSummary().filter(e => e.done); // las pendientes no van en lo exportado
     if (entries.length === 0) return null;
 
     const range = getSummaryRange(summaryYear, summaryMonth);
@@ -2289,7 +2290,7 @@ function buildSummaryCsv() {
         a.start.localeCompare(b.start)
     );
 
-    const rows = [['Persona', 'Fecha', 'Día', 'Desde', 'Hasta', 'Horas', 'Estado', 'Comentario']];
+    const rows = [['Persona', 'Fecha', 'Día', 'Desde', 'Hasta', 'Horas', 'Comentario']];
     for (const e of sorted) {
         rows.push([
             e.person,
@@ -2298,13 +2299,12 @@ function buildSummaryCsv() {
             e.start,
             e.end,
             fmtDur(entryHours(e)),
-            e.done ? 'Hecha' : 'Pendiente',
             e.comment || ''
         ]);
     }
     const totalHours = entries.reduce((s, e) => s + entryHours(e), 0);
     rows.push([]);
-    rows.push(['TOTAL', '', '', '', '', fmtDur(totalHours), '', '']);
+    rows.push(['TOTAL', '', '', '', '', fmtDur(totalHours), '']);
 
     const csv = rows.map(r => r.map(csvCell).join(';')).join('\r\n');
 
@@ -2359,18 +2359,18 @@ async function tryShareCsv(info) {
 
 async function exportSummaryCsv() {
     const info = buildSummaryCsv();
-    if (!info) { showToast('No hay datos para exportar'); return; }
+    if (!info) { showToast('No hay extras hechas para exportar'); return; }
     // En el celu primero probamos el menú "compartir con…"
     if (await tryShareCsv(info)) return;
     // Si no, descarga directa
     downloadFile(info.filename, info.csv, 'text/csv');
-    showToast('Descargando CSV…');
+    showToast('Descargando Excel…');
 }
 
 // Genera un PDF lindo del Resumen (con colores) y lo comparte o descarga
 async function exportSummaryPdf() {
-    const entries = getEntriesForSummary();
-    if (entries.length === 0) { showToast('No hay datos para exportar'); return; }
+    const entries = getEntriesForSummary().filter(e => e.done); // las pendientes no van en lo exportado
+    if (entries.length === 0) { showToast('No hay extras hechas para exportar'); return; }
     if (!(await loadLib('html2pdf'))) {
         showToast('No se pudo cargar el generador de PDF. Revisá la conexión.', 3500);
         return;
@@ -2413,11 +2413,6 @@ async function exportSummaryPdf() {
             <tr>
                 <td style="width:34%;color:${shade};"><span class="hx-dot" style="background:${color};border-color:${shade};"></span>${escapeHtml(p.person)}</td>
                 <td class="hx-num">${fmtDur(p.total)}</td>
-                <td class="hx-num hx-ok">${fmtDur(p.done)}</td>
-                <td class="hx-num hx-warn">${fmtDur(p.total - p.done)}</td>
-                <td style="width:22%;">
-                    <div class="hx-track"><div class="hx-fill" style="width:${pct}%;background:${color};border:1px solid ${shade};"></div></div>
-                </td>
             </tr>`;
     });
 
@@ -2429,16 +2424,12 @@ async function exportSummaryPdf() {
         const initial = escapeHtml((p.person.trim().charAt(0) || '?').toUpperCase());
         let rows = '';
         for (const e of p.items) {
-            const st = e.done
-                ? '<span class="hx-chip hx-chip-ok">Hecha</span>'
-                : '<span class="hx-chip hx-chip-pend">Pendiente</span>';
             rows += `
                 <tr>
-                    <td style="width:16%;">${fmtShort(e.date)}</td>
-                    <td style="width:20%;">${escapeHtml(cap(getDayName(e.date)))}</td>
-                    <td style="width:22%;">${e.start} – ${e.end}</td>
-                    <td class="hx-num" style="width:12%;">${fmtDur(entryHours(e))}</td>
-                    <td style="width:16%;">${st}</td>
+                    <td style="width:18%;">${fmtShort(e.date)}</td>
+                    <td style="width:22%;">${escapeHtml(cap(getDayName(e.date)))}</td>
+                    <td style="width:24%;">${e.start} – ${e.end}</td>
+                    <td class="hx-num" style="width:14%;">${fmtDur(entryHours(e))}</td>
                     <td class="hx-com">${escapeHtml(e.comment || '')}</td>
                 </tr>`;
         }
@@ -2503,25 +2494,20 @@ async function exportSummaryPdf() {
             </div>
 
             <div class="hx-kpis">
-                <div class="hx-kpi"><div class="hx-kpi-n" style="color:#6C63FF;">${fmtDur(totalAll)}</div><div class="hx-kpi-l">Total</div></div>
-                <div class="hx-kpi"><div class="hx-kpi-n" style="color:#059669;">${fmtDur(doneAll)}</div><div class="hx-kpi-l">Hechas (${pctAll}%)</div></div>
-                <div class="hx-kpi"><div class="hx-kpi-n" style="color:#D97706;">${fmtDur(pendAll)}</div><div class="hx-kpi-l">Pendientes</div></div>
+                <div class="hx-kpi"><div class="hx-kpi-n" style="color:#6C63FF;">${fmtDur(totalAll)}</div><div class="hx-kpi-l">Total de horas</div></div>
                 <div class="hx-kpi"><div class="hx-kpi-n">${people.length}</div><div class="hx-kpi-l">Personas</div></div>
             </div>
 
             <div class="hx-h3">Resumen por persona</div>
             <table class="hx-sum">
                 <thead><tr>
-                    <th>Persona</th><th style="text-align:right;">Total</th><th style="text-align:right;">Hechas</th><th style="text-align:right;">Pendientes</th><th>Avance</th>
+                    <th>Persona</th><th style="text-align:right;">Horas</th>
                 </tr></thead>
                 <tbody>
                     ${summaryRows}
                     <tr class="hx-tot">
                         <td>TOTAL</td>
                         <td class="hx-num">${fmtDur(totalAll)}</td>
-                        <td class="hx-num">${fmtDur(doneAll)}</td>
-                        <td class="hx-num">${fmtDur(pendAll)}</td>
-                        <td></td>
                     </tr>
                 </tbody>
             </table>
